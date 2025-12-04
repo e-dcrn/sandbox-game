@@ -11,8 +11,7 @@ Avant de coder, il faut choisir les "gestionnaires" pour ne pas écrire des driv
 **Les choix recommandés (Standard de l'industrie pour du C++ from scratch) :**
 
 1.  **Gestion Fenêtre/Input/Graphismes 2D :**
-    * *Option A (C++ friendly) :* **SFML 3.x** (Simple, orienté objet, très propre).
-    * *Option B (C pur, très performant) :* **SDL2** ou **SDL3**.
+    * **SDL2** ou **SDL3**.
 2.  **Système d'Entités (ECS) :**
     * **EnTT** : La référence absolue en C++. Indispensable pour une sandbox avec beaucoup d'objets. Ne fais pas ta propre gestion d'objets avec de l'héritage complexe (`class Arbre : public Entity`), tu vas le regretter. Utilise l'ECS.
 3.  **Interface UI (Debug) :**
