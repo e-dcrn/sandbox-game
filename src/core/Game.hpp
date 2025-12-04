@@ -2,6 +2,7 @@
 
 #include <entt/entt.hpp>
 #include <SDL.h>
+#include "physics/PhysicsSystem.hpp"
 
 // Forward declaration
 struct ImGuiIO;
@@ -23,6 +24,7 @@ private:
     SDL_Renderer* renderer;
     entt::registry registry;
     ImGuiIO* io;
+    PhysicsSystem physics_system;
     bool is_running;
     int mouse_x, mouse_y;
 };

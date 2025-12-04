@@ -1,5 +1,12 @@
 #pragma once
-
 #include <entt/entt.hpp>
+#include "ForceRegistry.hpp"
 
-void update_physics(entt::registry& registry, float dt);
+class PhysicsSystem {
+public:
+    void init(); // C'est ici qu'on va "charger" nos forces
+    void update(entt::registry& registry, float dt);
+
+private:
+    ForceRegistry force_registry;
+};

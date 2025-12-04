@@ -2,7 +2,6 @@
 #include "utils/Logger.hpp"
 #include "common/Components.hpp"
 #include "physics/Components.hpp"
-#include "physics/PhysicsSystem.hpp"
 #include "render/RenderSystem.hpp"
 #include "render/DebugSystem.hpp"
 
@@ -65,6 +64,9 @@ bool Game::init() {
     ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer2_Init(renderer);
 
+    // Initialize Physics System
+    physics_system.init();
+
     // Create a single red circle entity
     auto entity = registry.create();
     registry.emplace<Position>(entity,
@@ -78,6 +80,7 @@ bool Game::init() {
     );
     registry.emplace<RigidBody>(entity, 1.0f, 1.0f, 0.5f);
     registry.emplace<ForceAccumulator>(entity, 0.0f, 0.0f);
+    registry.emplace<GravityAffected>(entity);
 
     is_running = true;
     log_info("Game initialized successfully.");
@@ -114,7 +117,7 @@ void Game::update() {
     // Clamp dt pour éviter les bugs si la fenêtre est déplacée
     if (dt > 0.1f) dt = 0.1f;
 
-    update_physics(registry, dt);
+    physics_system.update(registry, dt);
 }
 
 void Game::render() {

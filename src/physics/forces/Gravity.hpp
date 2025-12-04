@@ -3,12 +3,13 @@
 #include "../Components.hpp"
 
 namespace Forces {
-    inline void apply_gravity(entt::registry& registry, float gravity_y = 980.0f) { 
-        auto view = registry.view<const RigidBody, ForceAccumulator>();
+    inline void apply_gravity(entt::registry& registry, float /*dt*/) { 
+        auto view = registry.view<const RigidBody, ForceAccumulator, const GravityAffected>();
         
-        view.each([gravity_y](const RigidBody& body, ForceAccumulator& forces) {
+        view.each([](const RigidBody& body, ForceAccumulator& forces, const GravityAffected& grav) {
             if (body.inverseMass > 0) {
-                forces.y += (1.0f / body.inverseMass) * gravity_y; 
+                float gravity_force = (1.0f / body.inverseMass) * 980.0f;
+                forces.y += gravity_force * grav.scale; 
             }
         });
     }

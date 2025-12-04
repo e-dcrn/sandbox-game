@@ -15,3 +15,7 @@ struct Velocity {
     float x;
     float y;
 };
+
+struct GravityAffected {
+    float scale = 1.0f; 
+};
