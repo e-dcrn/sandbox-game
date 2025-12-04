@@ -26,3 +26,5 @@ private:
     bool is_running;
     int mouse_x, mouse_y;
 };
+
+Uint64 last_tick = 0;

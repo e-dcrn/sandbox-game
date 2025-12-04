@@ -1,6 +1,7 @@
 #include "Game.hpp"
 #include "utils/Logger.hpp"
-#include "components/Components.hpp"
+#include "common/Components.hpp"
+#include "physics/Components.hpp"
 #include "physics/PhysicsSystem.hpp"
 #include "render/RenderSystem.hpp"
 #include "render/DebugSystem.hpp"
@@ -11,8 +12,8 @@
 #include <cstdlib>
 #include <ctime>
 
-const int SCREEN_WIDTH = 1280;
-const int SCREEN_HEIGHT = 720;
+const int SCREEN_WIDTH = 1028;
+const int SCREEN_HEIGHT = 612;
 
 Game::Game() : window(nullptr), renderer(nullptr), io(nullptr), is_running(false), mouse_x(0), mouse_y(0) {
 }
@@ -40,6 +41,7 @@ bool Game::init() {
         log_error("SDL could not initialize", SDL_GetError());
         return false;
     }
+    last_tick = SDL_GetTicks64();
 
     // Create Window
     window = SDL_CreateWindow("ECS Sandbox", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
@@ -74,7 +76,8 @@ bool Game::init() {
         30.0f, 
         SDL_Color{255, 0, 0, 255}
     );
-    registry.emplace<FollowsMouse>(entity);
+    registry.emplace<RigidBody>(entity, 1.0f, 1.0f, 0.5f);
+    registry.emplace<ForceAccumulator>(entity, 0.0f, 0.0f);
 
     is_running = true;
     log_info("Game initialized successfully.");
@@ -104,8 +107,14 @@ void Game::process_events() {
 }
 
 void Game::update() {
-    update_velocity_system(registry, mouse_x, mouse_y);
-    movement_system(registry);
+    Uint64 current_tick = SDL_GetTicks64();
+    float dt = (current_tick - last_tick) / 1000.0f;
+    last_tick = current_tick;
+
+    // Clamp dt pour éviter les bugs si la fenêtre est déplacée
+    if (dt > 0.1f) dt = 0.1f;
+
+    update_physics(registry, dt);
 }
 
 void Game::render() {

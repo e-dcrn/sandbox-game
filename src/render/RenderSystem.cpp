@@ -1,5 +1,5 @@
 #include "RenderSystem.hpp"
-#include "../components/Components.hpp"
+#include "../common/Components.hpp"
 #include <SDL.h>
 
 // Helper function to draw a circle, not exposed in the header

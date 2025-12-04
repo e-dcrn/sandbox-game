@@ -3,11 +3,8 @@
 #include <SDL.h>
 
 struct Position {
-    float x, y;
-};
-
-struct Velocity {
-    float x, y;
+    float x;
+    float y;
 };
 
 struct Circle {
