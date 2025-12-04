@@ -19,7 +19,7 @@ LIBS     = $(shell sdl2-config --libs) -ldl -lpthread
 
 # --- Fichiers Sources ---
 # Tes sources
-SOURCES  = $(SRC_DIR)/main.cpp
+SOURCES  = $(shell find $(SRC_DIR) -name "*.cpp")
 
 # Sources ImGui
 IMGUI_DIR = $(LIBS_DIR)/imgui
