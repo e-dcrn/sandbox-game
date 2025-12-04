@@ -4,6 +4,7 @@
 #include "physics/Components.hpp"
 #include "render/RenderSystem.hpp"
 #include "render/DebugSystem.hpp"
+#include "EntityFactory.hpp"
 
 #include <imgui.h>
 #include <imgui_impl_sdl2.h>
@@ -67,20 +68,7 @@ bool Game::init() {
     // Initialize Physics System
     physics_system.init();
 
-    // Create a single red circle entity
-    auto entity = registry.create();
-    registry.emplace<Position>(entity,
-        static_cast<float>(SCREEN_WIDTH / 2),
-        static_cast<float>(SCREEN_HEIGHT / 2)
-    );
-    registry.emplace<Velocity>(entity, 0.0f, 0.0f);
-    registry.emplace<Circle>(entity, 
-        30.0f, 
-        SDL_Color{255, 0, 0, 255}
-    );
-    registry.emplace<RigidBody>(entity, 1.0f, 1.0f, 0.5f);
-    registry.emplace<ForceAccumulator>(entity, 0.0f, 0.0f);
-    registry.emplace<GravityAffected>(entity);
+    Factory::create_ball(registry, 200.0f, 100.0f);
 
     is_running = true;
     log_info("Game initialized successfully.");

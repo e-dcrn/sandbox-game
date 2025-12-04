@@ -4,7 +4,7 @@
 
 class PhysicsSystem {
 public:
-    void init(); // C'est ici qu'on va "charger" nos forces
+    void init();
     void update(entt::registry& registry, float dt);
 
 private:
