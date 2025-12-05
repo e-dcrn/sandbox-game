@@ -12,7 +12,7 @@
 #include <cstdlib>
 #include <ctime>
 
-const int SCREEN_WIDTH = 1028;
+const int SCREEN_WIDTH = 1024;
 const int SCREEN_HEIGHT = 612;
 
 Game::Game() : window(nullptr), renderer(nullptr), io(nullptr), is_running(false), mouse_x(0), mouse_y(0) {
@@ -68,8 +68,18 @@ bool Game::init() {
     // Initialize Physics System
     physics_system.init();
 
-    Factory::create_ball(registry, 200.0f, 100.0f);
-    Factory::create_wall(registry, 540.0f, 500.0f, 880.0f, 50.0f);
+    std::srand(static_cast<unsigned int>(std::time(nullptr)));
+    
+    Factory::create_wall(registry, 512.0f, 50.0f, 824.0f, 100.0f);
+    Factory::create_wall(registry, 512.0f, 550.0f, 824.0f, 100.0f);
+    Factory::create_wall(registry, 125.0f, 300.0f, 100.0f, 500.0f);
+    Factory::create_wall(registry, 899.0f, 300.0f, 100.0f, 500.0f);
+
+    for (int i = 0; i < 100; ++i) {
+        float randX = 200.0f + (rand() % 600); 
+        float randY = 100.0f + (rand() % 200);
+        Factory::create_ball(registry, randX, randY);
+    }
 
     is_running = true;
     log_info("Game initialized successfully.");

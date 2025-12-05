@@ -89,8 +89,6 @@ void PhysicsSystem::resolve_pair(
         
         float velAlongNormal = relVelX * result.normal_vector.x + relVelY * result.normal_vector.y;
 
-        if (velAlongNormal > 0) return;
-
         float e = combine_restitution(bodyA.restitution, bodyB.restitution);
         float j = -(1.0f + e) * velAlongNormal;
         j /= totalMass;

@@ -11,7 +11,7 @@ namespace Factory {
         
         float inv_mass = (mass > 0) ? 1.0f / mass : 0.0f;
         
-        registry.emplace<RigidBody>(entity, mass, inv_mass, 0.5f);
+        registry.emplace<RigidBody>(entity, mass, inv_mass, 1.0f);
         registry.emplace<ForceAccumulator>(entity, 0.0f, 0.0f);
 
         if (gravity) registry.emplace<GravityAffected>(entity);
@@ -22,8 +22,8 @@ namespace Factory {
 
         registry.emplace<Position>(entity, x, y);
         registry.emplace<Velocity>(entity, 0.0f, 0.0f);
-        registry.emplace<Circle>(entity, 30.0f, SDL_Color{255, 0, 0, 255});
-        registry.emplace<Collider>(entity, ColliderType::CIRCLE, 30.0f, 0.0f, 0.0f);
+        registry.emplace<Circle>(entity, 10.0f, SDL_Color{255, 0, 0, 255});
+        registry.emplace<Collider>(entity, ColliderType::CIRCLE, 10.0f, 0.0f, 0.0f);
 
         add_physics(registry, entity, 1.0f, true);
 

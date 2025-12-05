@@ -27,6 +27,5 @@ private:
     PhysicsSystem physics_system;
     bool is_running;
     int mouse_x, mouse_y;
+    Uint64 last_tick = 0;
 };
-
-Uint64 last_tick = 0;
