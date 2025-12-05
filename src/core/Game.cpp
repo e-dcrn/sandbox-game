@@ -51,7 +51,7 @@ bool Game::init() {
     }
 
     // Create Renderer
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED /*| SDL_RENDERER_PRESENTVSYNC*/);
     if (!renderer) {
         log_error("Renderer could not be created", SDL_GetError());
         return false;
@@ -75,7 +75,7 @@ bool Game::init() {
     Factory::create_wall(registry, 125.0f, 300.0f, 100.0f, 500.0f);
     Factory::create_wall(registry, 899.0f, 300.0f, 100.0f, 500.0f);
 
-    for (int i = 0; i < 100; ++i) {
+    for (int i = 0; i < 200; ++i) {
         float randX = 200.0f + (rand() % 600); 
         float randY = 100.0f + (rand() % 200);
         Factory::create_ball(registry, randX, randY);
@@ -113,9 +113,9 @@ void Game::update() {
     float dt = (current_tick - last_tick) / 1000.0f;
     last_tick = current_tick;
 
-    // Clamp dt pour éviter les bugs si la fenêtre est déplacée
-    if (dt > 0.1f) dt = 0.1f;
-
+    // Slow down time step for stability of physics simulation
+    if (dt > 0.003f) dt = 0.003f;
+    
     physics_system.update(registry, dt);
 }
 
