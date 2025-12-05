@@ -23,19 +23,22 @@ namespace Factory {
         registry.emplace<Position>(entity, x, y);
         registry.emplace<Velocity>(entity, 0.0f, 0.0f);
         registry.emplace<Circle>(entity, 30.0f, SDL_Color{255, 0, 0, 255});
+        registry.emplace<Collider>(entity, ColliderType::CIRCLE, 30.0f, 0.0f, 0.0f);
 
         add_physics(registry, entity, 1.0f, true);
 
         return entity;
     }
 
-    inline entt::entity create_wall(entt::registry& registry, float x, float y) {
-        auto entity = registry.create();
-        registry.emplace<Position>(entity, x, y);
-        registry.emplace<Circle>(entity, 30.0f, SDL_Color{100, 100, 100, 255}); // Gris
-        
-        add_physics(registry, entity, 0.0f, false); 
-        
-        return entity;
-    }
+    inline entt::entity create_wall(entt::registry& registry, float x, float y, float w, float h) {
+    auto entity = registry.create();
+    
+    registry.emplace<Position>(entity, x, y);
+    registry.emplace<Rectangle>(entity, w, h, SDL_Color{100, 100, 100, 255}); // Gris
+    registry.emplace<Collider>(entity, ColliderType::BOX, 0.0f, w, h);
+    
+    add_physics(registry, entity, 0.0f, false); 
+    
+    return entity;
+}
 }

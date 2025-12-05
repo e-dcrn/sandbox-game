@@ -19,3 +19,15 @@ struct Velocity {
 struct GravityAffected {
     float scale = 1.0f; 
 };
+
+enum class ColliderType {
+    CIRCLE,
+    BOX
+};
+
+struct Collider {
+    ColliderType type;
+    float radius;
+    float width;
+    float height;
+};

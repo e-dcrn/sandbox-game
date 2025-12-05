@@ -69,6 +69,7 @@ bool Game::init() {
     physics_system.init();
 
     Factory::create_ball(registry, 200.0f, 100.0f);
+    Factory::create_wall(registry, 540.0f, 500.0f, 880.0f, 50.0f);
 
     is_running = true;
     log_info("Game initialized successfully.");

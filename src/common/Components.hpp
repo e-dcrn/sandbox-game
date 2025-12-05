@@ -12,4 +12,10 @@ struct Circle {
     SDL_Color color;
 };
 
+struct Rectangle {
+    float width;
+    float height;
+    SDL_Color color;
+};
+
 struct FollowsMouse {};
