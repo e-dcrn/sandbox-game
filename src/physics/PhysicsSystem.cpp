@@ -37,7 +37,7 @@ void PhysicsSystem::update(entt::registry& registry, float dt, float time_scale)
             pos.y += vel.y * sub_dt * time_scale;
         });
 
-        solve_collisions(registry);
+        solve_collisions(registry,time_scale);
     }
 }
 
@@ -48,35 +48,24 @@ float PhysicsSystem::combine_restitution(float rA, float rB) {
 
 void PhysicsSystem::resolve_pair(
     Position& posA, Velocity& velA, const RigidBody& bodyA, const Collider& colA,
-    Position& posB, Velocity& velB, const RigidBody& bodyB, const Collider& colB
+    Position& posB, Velocity& velB, const RigidBody& bodyB, const Collider& colB,
+    float time_scale
 ) {
     CollisionResult result = {false, {0,0}, 0};
 
     if (colA.type == ColliderType::CIRCLE && colB.type == ColliderType::CIRCLE) {
-        result = check_circle_circle(
-            {posA.x, posA.y}, colA.radius,
-            {posB.x, posB.y}, colB.radius
-        );
+        result = check_circle_circle({posA.x, posA.y}, colA.radius, {posB.x, posB.y}, colB.radius);
     }
     else if (colA.type == ColliderType::CIRCLE && colB.type == ColliderType::BOX) {
-        result = check_circle_box(
-            {posA.x, posA.y}, colA.radius,
-            {posB.x, posB.y}, {colB.width, colB.height}
-        );
+        result = check_circle_box({posA.x, posA.y}, colA.radius, {posB.x, posB.y}, {colB.width, colB.height});
     }
     else if (colA.type == ColliderType::BOX && colB.type == ColliderType::CIRCLE) {
-        result = check_circle_box(
-            {posB.x, posB.y}, colB.radius,
-            {posA.x, posA.y}, {colA.width, colA.height}
-        );
+        result = check_circle_box({posB.x, posB.y}, colB.radius, {posA.x, posA.y}, {colA.width, colA.height});
         result.normal_vector.x *= -1.0f;
         result.normal_vector.y *= -1.0f;
     }
     else {
-        result = check_box_box(
-            {posA.x, posA.y}, {colA.width, colA.height},
-            {posB.x, posB.y}, {colB.width, colB.height}
-        );
+        result = check_box_box({posA.x, posA.y}, {colA.width, colA.height}, {posB.x, posB.y}, {colB.width, colB.height});
     }
 
     if (result.is_colliding) {
@@ -86,17 +75,44 @@ void PhysicsSystem::resolve_pair(
 
         if (totalMass == 0.0f) return;
 
-        float relVelX = velB.x - velA.x;
-        float relVelY = velB.y - velA.y;
+        float relVelX = (velA.x - velB.x) * time_scale;
+        float relVelY = (velA.y - velB.y) * time_scale;
         float velAlongNormal = relVelX * result.normal_vector.x + relVelY * result.normal_vector.y;
+        
+        if (velAlongNormal > 0) return;
 
-        float move = result.depth / totalMass;
-        posA.x += result.normal_vector.x * invMassA * move;
-        posA.y += result.normal_vector.y * invMassA * move;
-        posB.x -= result.normal_vector.x * invMassB * move;
-        posB.y -= result.normal_vector.y * invMassB * move;
+        bool solved = false;
+        float timeToRewind = result.depth / -velAlongNormal;
+        const float EPSILON = 0.001f;
+        if (velAlongNormal < -EPSILON) {
+            float relSpeedSq = relVelX*relVelX + relVelY*relVelY;
+            if (velAlongNormal * velAlongNormal > 0.01f * relSpeedSq) {
+                if (timeToRewind > 0.05f) timeToRewind = 0.05f;
+
+                posA.x -= velA.x * timeToRewind * time_scale;
+                posA.y -= velA.y * timeToRewind * time_scale;
+                posB.x -= velB.x * timeToRewind * time_scale;
+                posB.y -= velB.y * timeToRewind * time_scale;
+                solved = true;
+            }
+        }
+
+        if (!solved) { // Old version fallback
+            float move = result.depth / totalMass;
+            posA.x += result.normal_vector.x * invMassA * move;
+            posA.y += result.normal_vector.y * invMassA * move;
+            posB.x -= result.normal_vector.x * invMassB * move;
+            posB.y -= result.normal_vector.y * invMassB * move;
+        }
+
+        relVelX = velB.x - velA.x;
+        relVelY = velB.y - velA.y;
+        velAlongNormal = relVelX * result.normal_vector.x + relVelY * result.normal_vector.y;
 
         float e = combine_restitution(bodyA.restitution, bodyB.restitution);
+        if (velAlongNormal > -0.1f && velAlongNormal < 0.1f) {
+            e = 0.0f;
+        }
         float j = -(1.0f + e) * velAlongNormal;
         j /= totalMass;
 
@@ -106,18 +122,25 @@ void PhysicsSystem::resolve_pair(
         velA.y -= impulseY * invMassA;
         velB.x += impulseX * invMassB;
         velB.y += impulseY * invMassB;
+
+        if(solved){
+            posA.x += velA.x * timeToRewind * time_scale;
+            posA.y += velA.y * timeToRewind * time_scale;
+            posB.x += velB.x * timeToRewind * time_scale;
+            posB.y += velB.y * timeToRewind * time_scale;
+        }
     }
 }
 
-void PhysicsSystem::solve_collisions(entt::registry& registry) {
+void PhysicsSystem::solve_collisions(entt::registry& registry, float time_scale) {
     auto dynamics = registry.view<Position, Velocity, RigidBody, Collider>();
     auto statics = registry.view<Position, RigidBody, Collider>(entt::exclude<Velocity>);
 
-    dynamics.each([&statics](Position& posA, Velocity& velA, const RigidBody& bodyA, const Collider& colA) {
+    dynamics.each([&statics,time_scale](Position& posA, Velocity& velA, const RigidBody& bodyA, const Collider& colA) {
         statics.each([&](const Position& posB, const RigidBody& bodyB, const Collider& colB) {
             Velocity staticVel = {0.0f, 0.0f}; 
             resolve_pair(posA, velA, bodyA, colA, 
-                         const_cast<Position&>(posB), staticVel, bodyB, colB); 
+                         const_cast<Position&>(posB), staticVel, bodyB, colB, time_scale); 
         });
     });
 
@@ -140,7 +163,7 @@ void PhysicsSystem::solve_collisions(entt::registry& registry) {
             auto& colB = dynamics.get<Collider>(entityB);
 
             resolve_pair(posA, velA, bodyA, colA, 
-                         posB, velB, bodyB, colB);
+                         posB, velB, bodyB, colB, time_scale);
         }
     }
 }

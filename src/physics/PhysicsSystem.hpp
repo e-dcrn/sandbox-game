@@ -12,10 +12,11 @@ public:
 
 private:
     ForceRegistry force_registry;
-    void solve_collisions(entt::registry& registry);
+    void solve_collisions(entt::registry& registry, float time_scale);
     static float combine_restitution(float rA, float rB);
     static void resolve_pair(
         Position& posA, Velocity& velA, const RigidBody& bodyA, const Collider& colA,
-        Position& posB, Velocity& velB, const RigidBody& bodyB, const Collider& colB
+        Position& posB, Velocity& velB, const RigidBody& bodyB, const Collider& colB,
+        float time_scale
     );
 };
