@@ -9,6 +9,10 @@ struct ImGuiIO;
 
 class Game {
 public:
+    entt::registry registry;
+    bool m_paused = false;
+    bool m_step_once = false;
+
     Game();
     ~Game();
 
@@ -22,7 +26,6 @@ private:
 
     SDL_Window* window;
     SDL_Renderer* renderer;
-    entt::registry registry;
     ImGuiIO* io;
     PhysicsSystem physics_system;
     bool is_running;

@@ -89,7 +89,12 @@ bool Game::init() {
 void Game::run() {
     while (is_running) {
         process_events();
-        update();
+
+        if (!m_paused || m_step_once) {
+            update();
+            m_step_once = false;
+        }
+
         render();
     }
 }
@@ -98,6 +103,7 @@ void Game::process_events() {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         ImGui_ImplSDL2_ProcessEvent(&event);
+        handle_debug_input(*this, event);
         if (event.type == SDL_QUIT) {
             is_running = false;
         }
@@ -126,7 +132,7 @@ void Game::render() {
     ImGui::NewFrame();
 
     // Render debug window
-    render_debug_window(*io, registry);
+    render_debug_window(*io, *this);
 
     // Clear screen
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
