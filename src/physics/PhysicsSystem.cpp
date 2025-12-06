@@ -9,26 +9,36 @@ void PhysicsSystem::init() {
 }
 
 void PhysicsSystem::update(entt::registry& registry, float dt) {
-    registry.view<ForceAccumulator>().each([](auto& force) {
-        force.x = 0; force.y = 0;
-    });
 
-    force_registry.apply_all(registry, dt);
+    const int sub_steps = 1;
+    float sub_dt = dt / sub_steps;
 
-    auto view = registry.view<RigidBody, Position, Velocity, ForceAccumulator>();
-    view.each([dt](const auto& body, auto& pos, auto& vel, const auto& forces) {
-        if (body.inverseMass == 0) return;
+    for(int i = 0; i < sub_steps; ++i){
+        registry.view<ForceAccumulator>().each([](auto& force) {
+            force.x = 0; force.y = 0;
+        });
 
-        float acc_x = forces.x * body.inverseMass;
-        float acc_y = forces.y * body.inverseMass;
+        force_registry.apply_all(registry, sub_dt);
 
-        vel.x += acc_x * dt;
-        vel.y += acc_y * dt;
-        pos.x += vel.x * dt;
-        pos.y += vel.y * dt;
-    });
+        auto view = registry.view<RigidBody, Position, Velocity, ForceAccumulator>();
+        view.each([sub_dt](const auto& body, auto& pos, auto& vel, const auto& forces) {
+            if (body.inverseMass == 0) return;
 
-    solve_collisions(registry);
+            float acc_x = forces.x * body.inverseMass;
+            float acc_y = forces.y * body.inverseMass;
+
+            vel.x += acc_x * sub_dt;
+            vel.y += acc_y * sub_dt;
+            if (vel.y > 1000.0f) vel.y = 1000.0f; 
+            if (vel.y < -1000.0f) vel.y = -1000.0f;
+            if (vel.x > 1000.0f) vel.x = 1000.0f; 
+            if (vel.x < -1000.0f) vel.x = -1000.0f;
+            pos.x += vel.x * sub_dt;
+            pos.y += vel.y * sub_dt;
+        });
+
+        solve_collisions(registry);
+    }
 }
 
 float PhysicsSystem::combine_restitution(float rA, float rB) {

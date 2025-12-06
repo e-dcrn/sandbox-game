@@ -114,7 +114,7 @@ void Game::update() {
     last_tick = current_tick;
 
     // Slow down time step for stability of physics simulation
-    if (dt > 0.003f) dt = 0.003f;
+    if (dt > 0.05f) dt = 0.05f;
     
     physics_system.update(registry, dt);
 }

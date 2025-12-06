@@ -38,33 +38,55 @@ CollisionResult check_circle_circle(Vect2 centerA, float radiusA, Vect2 centerB,
     return {false, {0.0f, 0.0f}, 0.0f};
 }
 
-CollisionResult check_circle_box(Vect2 circle_center, float circle_radius, Vect2 box_center, Vect2 box_dimensions){
+CollisionResult check_circle_box(Vect2 circle_center, float circle_radius, Vect2 box_center, Vect2 box_dimensions) {
+    float dx = circle_center.x - box_center.x;
+    float dy = circle_center.y - box_center.y;
     float halfW = box_dimensions.x * 0.5f;
     float halfH = box_dimensions.y * 0.5f;
-    Vect2 closest = {
-        std::clamp(circle_center.x, box_center.x - halfW, box_center.x + halfW),
-        std::clamp(circle_center.y, box_center.y - halfH, box_center.y + halfH)
-    };
 
-    float distX = circle_center.x - closest.x;
-    float distY = circle_center.y - closest.y;
-    float square_dist = (distX * distX) + (distY * distY);
-    float required_square = circle_radius * circle_radius;
+    float closestX = std::clamp(dx, -halfW, halfW);
+    float closestY = std::clamp(dy, -halfH, halfH);
 
-    if (square_dist < required_square) {
-        float dist = std::sqrt(square_dist);
-        if (dist == 0.0f) {
-            return { true, {0.0f, 1.0f}, circle_radius}; 
+    bool inside = (dx == closestX && dy == closestY);
+
+    if (inside) {
+        float distToEdgeX = halfW - std::abs(dx);
+        float distToEdgeY = halfH - std::abs(dy);
+
+        Vect2 normal;
+        float depth;
+
+        if (distToEdgeX < distToEdgeY) {
+            normal = { (dx > 0) ? 1.0f : -1.0f, 0.0f };
+            depth = distToEdgeX + circle_radius;
+        } 
+        else {
+            normal = { 0.0f, (dy > 0) ? 1.0f : -1.0f };
+            depth = distToEdgeY + circle_radius;
         }
-        float inverse_dist = 1.0f / dist;
 
-        return {
-            true,
-            {distX * inverse_dist, distY * inverse_dist},
-            circle_radius - dist 
-        };
+        return { true, normal, depth };
     }
-    return {false, {0.0f, 0.0f}, 0.0f};
+    else {
+        float diffX = dx - closestX;
+        float diffY = dy - closestY;
+        float distSq = diffX * diffX + diffY * diffY;
+
+        if (distSq > circle_radius * circle_radius) {
+            return {false, {0.0f, 0.0f}, 0.0f};
+        }
+
+        float dist = std::sqrt(distSq);
+        Vect2 normal;
+        
+        if (dist == 0.0f) {
+            normal = {0.0f, 1.0f}; 
+        } else {
+            normal = { diffX / dist, diffY / dist };
+        }
+
+        return { true, normal, circle_radius - dist };
+    }
 }
 
 CollisionResult check_box_box(Vect2 centerA, Vect2 dimA, Vect2 centerB, Vect2 dimB) {
