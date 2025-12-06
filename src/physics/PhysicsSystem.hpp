@@ -8,7 +8,7 @@
 class PhysicsSystem {
 public:
     void init();
-    void update(entt::registry& registry, float dt);
+    void update(entt::registry& registry, float dt, float time_scale);
 
 private:
     ForceRegistry force_registry;

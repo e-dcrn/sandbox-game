@@ -8,7 +8,7 @@ void PhysicsSystem::init() {
     });
 }
 
-void PhysicsSystem::update(entt::registry& registry, float dt) {
+void PhysicsSystem::update(entt::registry& registry, float dt, float time_scale) {
 
     const int sub_steps = 1;
     float sub_dt = dt / sub_steps;
@@ -21,20 +21,20 @@ void PhysicsSystem::update(entt::registry& registry, float dt) {
         force_registry.apply_all(registry, sub_dt);
 
         auto view = registry.view<RigidBody, Position, Velocity, ForceAccumulator>();
-        view.each([sub_dt](const auto& body, auto& pos, auto& vel, const auto& forces) {
+        view.each([sub_dt,time_scale](const auto& body, auto& pos, auto& vel, const auto& forces) {
             if (body.inverseMass == 0) return;
 
             float acc_x = forces.x * body.inverseMass;
             float acc_y = forces.y * body.inverseMass;
 
-            vel.x += acc_x * sub_dt;
-            vel.y += acc_y * sub_dt;
+            vel.x += acc_x * sub_dt * time_scale;
+            vel.y += acc_y * sub_dt * time_scale;
             if (vel.y > 1000.0f) vel.y = 1000.0f; 
             if (vel.y < -1000.0f) vel.y = -1000.0f;
             if (vel.x > 1000.0f) vel.x = 1000.0f; 
             if (vel.x < -1000.0f) vel.x = -1000.0f;
-            pos.x += vel.x * sub_dt;
-            pos.y += vel.y * sub_dt;
+            pos.x += vel.x * sub_dt * time_scale;
+            pos.y += vel.y * sub_dt * time_scale;
         });
 
         solve_collisions(registry);
@@ -86,18 +86,15 @@ void PhysicsSystem::resolve_pair(
 
         if (totalMass == 0.0f) return;
 
-        float move = result.depth / totalMass;
-        
-        posA.x += result.normal_vector.x * invMassA * move;
-        posA.y += result.normal_vector.y * invMassA * move;
-
-        posB.x -= result.normal_vector.x * invMassB * move;
-        posB.y -= result.normal_vector.y * invMassB * move;
-
         float relVelX = velB.x - velA.x;
         float relVelY = velB.y - velA.y;
-        
         float velAlongNormal = relVelX * result.normal_vector.x + relVelY * result.normal_vector.y;
+
+        float move = result.depth / totalMass;
+        posA.x += result.normal_vector.x * invMassA * move;
+        posA.y += result.normal_vector.y * invMassA * move;
+        posB.x -= result.normal_vector.x * invMassB * move;
+        posB.y -= result.normal_vector.y * invMassB * move;
 
         float e = combine_restitution(bodyA.restitution, bodyB.restitution);
         float j = -(1.0f + e) * velAlongNormal;
@@ -105,10 +102,8 @@ void PhysicsSystem::resolve_pair(
 
         float impulseX = result.normal_vector.x * j;
         float impulseY = result.normal_vector.y * j;
-
         velA.x -= impulseX * invMassA;
         velA.y -= impulseY * invMassA;
-
         velB.x += impulseX * invMassB;
         velB.y += impulseY * invMassB;
     }

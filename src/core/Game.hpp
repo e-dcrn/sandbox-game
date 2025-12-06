@@ -12,6 +12,7 @@ public:
     entt::registry registry;
     bool m_paused = false;
     bool m_step_once = false;
+    float time_scale = 1.0f;
 
     Game();
     ~Game();

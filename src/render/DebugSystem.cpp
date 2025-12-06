@@ -24,9 +24,16 @@ void handle_debug_input(Game& game, const SDL_Event& event) {
         switch (event.key.keysym.sym) {
             case SDLK_SPACE:
                 game.m_paused = !game.m_paused;
+                game.time_scale = 1.0f;
                 break;
             case SDLK_RIGHT:
                 game.m_step_once = true;
+                game.time_scale = 1.0f;
+                break;
+            case SDLK_LEFT:
+                game.m_paused = true;
+                game.m_step_once = true;
+                game.time_scale = -1.0f;
                 break;
         }
     }
