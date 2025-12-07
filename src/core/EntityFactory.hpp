@@ -7,11 +7,11 @@
 
 namespace Factory {
 
-    inline void add_physics(entt::registry& registry, entt::entity entity, float mass, bool gravity = true) {
+    inline void add_physics(entt::registry& registry, entt::entity entity, float mass, float bounce = 1.0f, bool gravity = true) {
         
         float inv_mass = (mass > 0) ? 1.0f / mass : 0.0f;
         
-        registry.emplace<RigidBody>(entity, mass, inv_mass, 1.0f);
+        registry.emplace<RigidBody>(entity, mass, inv_mass, bounce);
         registry.emplace<ForceAccumulator>(entity, 0.0f, 0.0f);
 
         if (gravity) registry.emplace<GravityAffected>(entity);
@@ -25,7 +25,7 @@ namespace Factory {
         registry.emplace<Circle>(entity, 3.0f, SDL_Color{255, 0, 0, 255});
         registry.emplace<Collider>(entity, ColliderType::CIRCLE, 3.0f, 0.0f, 0.0f);
 
-        add_physics(registry, entity, 1.0f, true);
+        add_physics(registry, entity, 1.0f, 0.90f, true);
 
         return entity;
     }
@@ -37,7 +37,7 @@ namespace Factory {
     registry.emplace<Rectangle>(entity, w, h, SDL_Color{100, 100, 100, 255}); // Gris
     registry.emplace<Collider>(entity, ColliderType::BOX, 0.0f, w, h);
     
-    add_physics(registry, entity, 0.0f, false); 
+    add_physics(registry, entity, 0.0f, 1.0f, false); 
     
     return entity;
 }

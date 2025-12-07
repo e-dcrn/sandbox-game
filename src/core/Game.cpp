@@ -75,9 +75,25 @@ bool Game::init() {
     Factory::create_wall(registry, 125.0f, 300.0f, 100.0f, 500.0f);
     Factory::create_wall(registry, 899.0f, 300.0f, 100.0f, 500.0f);
 
-    for (int i = 0; i < 200; ++i) {
-        float randX = 200.0f + (rand() % 600); 
-        float randY = 100.0f + (rand() % 200);
+    float centerX = 500.0f; // Position X du centre de la sphère
+    float centerY = 300.0f; // Position Y du centre de la sphère
+    float maxRadius = 200.0f; // Rayon global de la sphère
+
+    for (int i = 0; i < 2000; ++i) {
+        // 1. Angle aléatoire entre 0 et 2*PI
+        // (rand() % 6283) / 1000.0f donne environ 0 à 6.283
+        float angle = ((rand() % 6283) / 1000.0f); 
+
+        // 2. Distance aléatoire du centre
+        // ASTUCE MATHÉMATIQUE : On utilise sqrt() pour une distribution uniforme.
+        // Sans sqrt, les balles s'agglutinent au centre.
+        float random0to1 = (rand() % 1000) / 1000.0f;
+        float distance = maxRadius * std::sqrt(random0to1);
+
+        // 3. Conversion Polaire -> Cartésien
+        float randX = centerX + std::cos(angle) * distance;
+        float randY = centerY + std::sin(angle) * distance;
+
         Factory::create_ball(registry, randX, randY);
     }
 
@@ -120,7 +136,7 @@ void Game::update() {
     last_tick = current_tick;
 
     // Slow down time step for stability of physics simulation
-    if (dt > 0.05f) dt = 0.05f;
+    if (dt > 0.01f) dt = 0.01f;
     
     physics_system.update(registry, dt, time_scale);
 }

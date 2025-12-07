@@ -41,6 +41,22 @@ void PhysicsSystem::update(entt::registry& registry, float dt, float time_scale)
     }
 }
 
+long PhysicsSystem::get_hash_key(float x, float y) const {
+    int cell_x = (int)std::floor(x / CELL_SIZE);
+    int cell_y = (int)std::floor(y / CELL_SIZE);
+    return ((long)cell_x << 32) | (long)cell_y;
+}
+
+void PhysicsSystem::build_grid(entt::registry& registry) {
+    spatial_grid.clear();
+    auto view = registry.view<Position, Velocity>();
+    
+    view.each([&](auto entity, const auto& pos, const auto& /*vel*/) {
+        long key = get_hash_key(pos.x, pos.y);
+        spatial_grid[key].push_back(entity);
+    });
+}
+
 float PhysicsSystem::combine_restitution(float rA, float rB) {
     if (rA > 1.0f || rB > 1.0f) return std::max(rA, rB);
     return rA * rB;
@@ -144,26 +160,58 @@ void PhysicsSystem::solve_collisions(entt::registry& registry, float time_scale)
         });
     });
 
-    std::vector<entt::entity> entities(dynamics.begin(), dynamics.end());
+    build_grid(registry);
+    
+    std::unordered_set<long> processed_pairs;
 
-    for (size_t i = 0; i < entities.size(); ++i) {
-        for (size_t j = i + 1; j < entities.size(); ++j) {
-            
-            entt::entity entityA = entities[i];
-            entt::entity entityB = entities[j];
+    // 2. On itère sur les dynamiques
+    // Note : On utilise 'each' pour capturer A, c'est le plus performant
+    dynamics.each([&, this](entt::entity entity_A, Position& posA, Velocity& velA, const RigidBody& bodyA, const Collider& colA) {
+        
+        // On sauvegarde la position de A pour chercher les voisins
+        // (Important pour ne pas chasser une cible mouvante si posA change)
+        float startX = posA.x;
+        float startY = posA.y;
 
-            auto& posA = dynamics.get<Position>(entityA);
-            auto& velA = dynamics.get<Velocity>(entityA);
-            auto& bodyA = dynamics.get<RigidBody>(entityA);
-            auto& colA = dynamics.get<Collider>(entityA);
+        for (int cell_dx = -1; cell_dx <= 1; ++cell_dx) {
+            for (int cell_dy = -1; cell_dy <= 1; ++cell_dy) {
+                
+                long key = get_hash_key(startX + cell_dx * CELL_SIZE, startY + cell_dy * CELL_SIZE);
 
-            auto& posB = dynamics.get<Position>(entityB);
-            auto& velB = dynamics.get<Velocity>(entityB);
-            auto& bodyB = dynamics.get<RigidBody>(entityB);
-            auto& colB = dynamics.get<Collider>(entityB);
+                if (spatial_grid.count(key)) {
+                    for (auto entity_B : spatial_grid.at(key)) {
+                        
+                        // Self-check
+                        if (entity_A == entity_B) continue; 
+                        
+                        // FILTRE IMPORTANT : On ne veut que les Dynamiques ici 
+                        // (car les Statiques sont gérés en Phase 1)
+                        if (!registry.all_of<Velocity>(entity_B)) continue; 
 
-            resolve_pair(posA, velA, bodyA, colA, 
-                         posB, velB, bodyB, colB, time_scale);
+                        // Vérification de la paire unique
+                        entt::entity id1 = entity_A;
+                        entt::entity id2 = entity_B;
+                        if (id1 > id2) std::swap(id1, id2);
+                        
+                        long pair_id = ((long)id1 << 32) | (long)id2;
+                        if (processed_pairs.count(pair_id)) continue; 
+                        processed_pairs.insert(pair_id);
+
+                        // Récupération de B
+                        // Note : entity_B est validé par le check all_of<Velocity> au dessus
+                        auto& posB = registry.get<Position>(entity_B);
+                        auto& velB = registry.get<Velocity>(entity_B);
+                        const auto& bodyB = registry.get<RigidBody>(entity_B);
+                        const auto& colB = registry.get<Collider>(entity_B);
+
+                        resolve_pair(
+                            posA, velA, bodyA, colA, 
+                            posB, velB, bodyB, colB, 
+                            time_scale
+                        );
+                    }
+                }
+            }
         }
-    }
+    });
 }
