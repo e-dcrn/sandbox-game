@@ -14,6 +14,12 @@ struct CollisionResult {
     float depth;
 };
 
+struct RayHit {
+    bool hit = false;
+    float t = 1.0f;        // 0.0 à 1.0
+    struct { float x, y; } normal = {0, 0};
+};
+
 CollisionResult check_circle_circle(Vect2 centerA, float radiusA, Vect2 centerB, float radiusB) {
     float distX = centerA.x - centerB.x;
     float distY = centerA.y - centerB.y;
@@ -116,4 +122,93 @@ CollisionResult check_box_box(Vect2 centerA, Vect2 dimA, Vect2 centerB, Vect2 di
         }
     }
     return {false, {0.0f, 0.0f}, 0.0f};
+}
+
+inline RayHit ray_vs_aabb(float ox, float oy, float dx, float dy, 
+                          float bx, float by, float bw, float bh) {
+    RayHit result;
+    
+    // Evite la division par zéro avec une valeur très grande
+    float inv_dx = (dx != 0.0f) ? 1.0f / dx : std::numeric_limits<float>::max();
+    float inv_dy = (dy != 0.0f) ? 1.0f / dy : std::numeric_limits<float>::max();
+
+    // Calcul des bornes de la boîte (centrée sur bx, by)
+    float min_x = bx - bw * 0.5f;
+    float max_x = bx + bw * 0.5f;
+    float min_y = by - bh * 0.5f;
+    float max_y = by + bh * 0.5f;
+
+    float t1 = (min_x - ox) * inv_dx;
+    float t2 = (max_x - ox) * inv_dx;
+    float t3 = (min_y - oy) * inv_dy;
+    float t4 = (max_y - oy) * inv_dy;
+
+    float tmin = std::max(std::min(t1, t2), std::min(t3, t4));
+    float tmax = std::min(std::max(t1, t2), std::max(t3, t4));
+
+    // Pas de collision ou collision derrière
+    if (tmax < 0 || tmin > tmax || tmin > 1.0f) return result;
+
+    result.hit = true;
+    result.t = tmin; // Clamp à 0 si on démarre dedans
+
+    // Normale
+    if (std::min(t1, t2) > std::min(t3, t4)) {
+        result.normal = {(dx < 0) ? 1.0f : -1.0f, 0.0f};
+    } else {
+        result.normal = {0.0f, (dy < 0) ? 1.0f : -1.0f};
+    }
+
+    return result;
+}
+
+inline RayHit ray_vs_circle(float ox, float oy, float dx, float dy, 
+                            float cx, float cy, float radius) {
+    RayHit result;
+
+    // Vecteur du Rayon vers le Centre du Cercle (f = origin - center)
+    float fx = ox - cx;
+    float fy = oy - cy;
+
+    // Equation quadratique: a*t^2 + b*t + c = 0
+    // a = D.D (Longueur du vecteur vitesse au carré)
+    float a = dx * dx + dy * dy;
+    
+    // b = 2 * (F . D)
+    float b = 2.0f * (fx * dx + fy * dy);
+    
+    // c = (F . F) - r^2
+    float c = (fx * fx + fy * fy) - (radius * radius);
+
+    float discriminant = b * b - 4 * a * c;
+
+    // Pas de solution réelle = le rayon rate le cercle
+    if (discriminant < 0) return result;
+
+    // On cherche la plus petite racine positive (le premier point d'impact)
+    discriminant = std::sqrt(discriminant);
+    float t1 = (-b - discriminant) / (2 * a);
+    float t2 = (-b + discriminant) / (2 * a);
+
+    // On prend le plus petit t positif
+    if (t2 < 0 || t1 > 1.0f) return result;
+
+    result.hit = true;
+    result.t = t1;
+
+    // Calcul de la normale (Point d'impact - Centre Cercle, normalisé)
+    float hit_x = ox + dx * result.t;
+    float hit_y = oy + dy * result.t;
+    
+    float nx = hit_x - cx;
+    float ny = hit_y - cy;
+    // Normalisation
+    float len = std::sqrt(nx*nx + ny*ny);
+    if (len > 0) {
+        result.normal.x = nx / len;
+        result.normal.y = ny / len;
+    }
+    
+
+    return result;
 }
