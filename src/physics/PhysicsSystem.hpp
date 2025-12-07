@@ -9,7 +9,7 @@
 class PhysicsSystem {
 public:
     void init();
-    void update(entt::registry& registry, float dt, float time_scale);
+    void update(entt::registry& registry, float dt);
 
 private:
     const float CELL_SIZE = 6.0f; 
@@ -23,13 +23,12 @@ private:
         Velocity& velA, float invMassA,
         Velocity& velB, float invMassB,
         const RigidBody& bodyA, const RigidBody& bodyB,
-        const Vect2& normal, float time_scale);
+        const Vect2& normal);
     static void resolve_pair(
         Position& posA, Velocity& velA, const RigidBody& bodyA, const Collider& colA,
-        Position& posB, Velocity& velB, const RigidBody& bodyB, const Collider& colB,
-        float time_scale
+        Position& posB, Velocity& velB, const RigidBody& bodyB, const Collider& colB
     );
-    void solve_collisions(entt::registry& registry, float time_scale);
+    void solve_collisions(entt::registry& registry);
     RayHit sweep_static_collisions(entt::registry& registry, 
                                    const Position& pos, 
                                    const Collider& collider, 

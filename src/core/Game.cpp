@@ -118,7 +118,7 @@ void Game::update() {
     // Slow down time step for stability of physics simulation
     if (dt > 0.01f) dt = 0.01f;
     
-    physics_system.update(registry, dt, time_scale);
+    physics_system.update(registry, dt);
 }
 
 void Game::render() {

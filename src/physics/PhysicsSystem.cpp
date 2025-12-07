@@ -7,7 +7,7 @@ void PhysicsSystem::init() {
     });
 }
 
-void PhysicsSystem::update(entt::registry& registry, float dt, float time_scale) {
+void PhysicsSystem::update(entt::registry& registry, float dt) {
 
     const int sub_steps = 1;
     float sub_dt = dt / sub_steps;
@@ -20,22 +20,22 @@ void PhysicsSystem::update(entt::registry& registry, float dt, float time_scale)
         force_registry.apply_all(registry, sub_dt);
 
         auto view = registry.view<RigidBody, Position, Velocity, Collider, ForceAccumulator>();
-        view.each([&registry, sub_dt, time_scale, this](const auto& body, auto& pos, auto& vel, const auto& col, const auto& forces) {
+        view.each([&registry, sub_dt, this](const auto& body, auto& pos, auto& vel, const auto& col, const auto& forces) {
             if (body.inverseMass == 0) return;
 
             float acc_x = forces.x * body.inverseMass;
             float acc_y = forces.y * body.inverseMass;
-            vel.x += acc_x * sub_dt * time_scale;
-            vel.y += acc_y * sub_dt * time_scale;
-            float dx = vel.x * sub_dt * time_scale;
-            float dy = vel.y * sub_dt * time_scale;
+            vel.x += acc_x * sub_dt;
+            vel.y += acc_y * sub_dt;
+            float dx = vel.x * sub_dt;
+            float dy = vel.y * sub_dt;
 
             RayHit wall_hit = sweep_static_collisions(registry, pos, col, dx, dy);
             wall_hit.hit = false;
             apply_continuous_movement(pos, vel, body, wall_hit, dx, dy, sub_dt);
         });
 
-        solve_collisions(registry,time_scale);
+        solve_collisions(registry);
     }
 }
 
@@ -65,7 +65,7 @@ void PhysicsSystem::apply_impulse_response(
     Velocity& velA, float invMassA,
     Velocity& velB, float invMassB,
     const RigidBody& bodyA, const RigidBody& bodyB,
-    const Vect2& normal, float time_scale) 
+    const Vect2& normal) 
 {
     // 1. Calcul de la vitesse relative
     float relVelX = velA.x - velB.x;
@@ -94,17 +94,16 @@ void PhysicsSystem::apply_impulse_response(
     float impulseX = normal.x * j;
     float impulseY = normal.y * j;
 
-    velA.x += impulseX * invMassA * time_scale; // A recule
-    velA.y += impulseY * invMassA * time_scale;
+    velA.x += impulseX * invMassA; // A recule
+    velA.y += impulseY * invMassA;
     
-    velB.x -= impulseX * invMassB * time_scale; // B avance
-    velB.y -= impulseY * invMassB * time_scale;
+    velB.x -= impulseX * invMassB; // B avance
+    velB.y -= impulseY * invMassB;
 }
 
 void PhysicsSystem::resolve_pair(
     Position& posA, Velocity& velA, const RigidBody& bodyA, const Collider& colA,
-    Position& posB, Velocity& velB, const RigidBody& bodyB, const Collider& colB,
-    float time_scale
+    Position& posB, Velocity& velB, const RigidBody& bodyB, const Collider& colB
 ) {
     CollisionResult result = {false, {0,0}, 0};
 
@@ -130,8 +129,8 @@ void PhysicsSystem::resolve_pair(
 
         if (totalMass == 0.0f) return;
 
-        float relVelX = (velA.x - velB.x) * time_scale;
-        float relVelY = (velA.y - velB.y) * time_scale;
+        float relVelX = (velA.x - velB.x);
+        float relVelY = (velA.y - velB.y);
         float velAlongNormal = relVelX * result.normal_vector.x + relVelY * result.normal_vector.y;
         
         if (velAlongNormal > 0) return;
@@ -144,10 +143,10 @@ void PhysicsSystem::resolve_pair(
             if (velAlongNormal * velAlongNormal > 0.01f * relSpeedSq) {
                 if (timeToRewind > 0.05f) timeToRewind = 0.05f;
 
-                posA.x -= velA.x * timeToRewind * time_scale;
-                posA.y -= velA.y * timeToRewind * time_scale;
-                posB.x -= velB.x * timeToRewind * time_scale;
-                posB.y -= velB.y * timeToRewind * time_scale;
+                posA.x -= velA.x * timeToRewind;
+                posA.y -= velA.y * timeToRewind;
+                posB.x -= velB.x * timeToRewind;
+                posB.y -= velB.y * timeToRewind;
                 solved = true;
             }
         }
@@ -162,26 +161,26 @@ void PhysicsSystem::resolve_pair(
 
         apply_impulse_response(velA, bodyA.inverseMass, 
                                velB, bodyB.inverseMass, 
-                               bodyA, bodyB, result.normal_vector, time_scale);
+                               bodyA, bodyB, result.normal_vector);
         
         if(solved){
-            posA.x += velA.x * timeToRewind * time_scale;
-            posA.y += velA.y * timeToRewind * time_scale;
-            posB.x += velB.x * timeToRewind * time_scale;
-            posB.y += velB.y * timeToRewind * time_scale;
+            posA.x += velA.x * timeToRewind;
+            posA.y += velA.y * timeToRewind;
+            posB.x += velB.x * timeToRewind;
+            posB.y += velB.y * timeToRewind;
         }
     }
 }
 
-void PhysicsSystem::solve_collisions(entt::registry& registry, float time_scale) {
+void PhysicsSystem::solve_collisions(entt::registry& registry) {
     auto dynamics = registry.view<Position, Velocity, RigidBody, Collider>();
     auto statics = registry.view<Position, RigidBody, Collider>(entt::exclude<Velocity>);
 
-    dynamics.each([&statics,time_scale](Position& posA, Velocity& velA, const RigidBody& bodyA, const Collider& colA) {
+    dynamics.each([&statics](Position& posA, Velocity& velA, const RigidBody& bodyA, const Collider& colA) {
         statics.each([&](const Position& posB, const RigidBody& bodyB, const Collider& colB) {
             Velocity staticVel = {0.0f, 0.0f}; 
             resolve_pair(posA, velA, bodyA, colA, 
-                         const_cast<Position&>(posB), staticVel, bodyB, colB, time_scale); 
+                         const_cast<Position&>(posB), staticVel, bodyB, colB); 
         });
     });
 
@@ -215,8 +214,7 @@ void PhysicsSystem::solve_collisions(entt::registry& registry, float time_scale)
 
                         resolve_pair(
                             posA, velA, bodyA, colA, 
-                            posB, velB, bodyB, colB, 
-                            time_scale
+                            posB, velB, bodyB, colB
                         );
                     }
                 }
@@ -287,7 +285,7 @@ void PhysicsSystem::apply_continuous_movement(Position& pos, Velocity& vel, cons
         // On réutilise la même logique de rebond !
         apply_impulse_response(vel, body.inverseMass, 
                                wallVel, 0.0f, 
-                               body, wallBody, {hit.normal.x, hit.normal.y}, 1.0f);
+                               body, wallBody, {hit.normal.x, hit.normal.y});
 
         float remaining_t = 1.0f - hit.t;
 

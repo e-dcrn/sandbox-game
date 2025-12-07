@@ -20,7 +20,7 @@ struct RayHit {
     struct { float x, y; } normal = {0, 0};
 };
 
-CollisionResult check_circle_circle(Vect2 centerA, float radiusA, Vect2 centerB, float radiusB) {
+inline CollisionResult check_circle_circle(Vect2 centerA, float radiusA, Vect2 centerB, float radiusB) {
     float distX = centerA.x - centerB.x;
     float distY = centerA.y - centerB.y;
     float required_distance = radiusA + radiusB;
@@ -44,7 +44,7 @@ CollisionResult check_circle_circle(Vect2 centerA, float radiusA, Vect2 centerB,
     return {false, {0.0f, 0.0f}, 0.0f};
 }
 
-CollisionResult check_circle_box(Vect2 circle_center, float circle_radius, Vect2 box_center, Vect2 box_dimensions) {
+inline CollisionResult check_circle_box(Vect2 circle_center, float circle_radius, Vect2 box_center, Vect2 box_dimensions) {
     float dx = circle_center.x - box_center.x;
     float dy = circle_center.y - box_center.y;
     float halfW = box_dimensions.x * 0.5f;
@@ -95,7 +95,7 @@ CollisionResult check_circle_box(Vect2 circle_center, float circle_radius, Vect2
     }
 }
 
-CollisionResult check_box_box(Vect2 centerA, Vect2 dimA, Vect2 centerB, Vect2 dimB) {
+inline CollisionResult check_box_box(Vect2 centerA, Vect2 dimA, Vect2 centerB, Vect2 dimB) {
     float halfW_A = dimA.x * 0.5f;
     float halfH_A = dimA.y * 0.5f;
     float halfW_B = dimB.x * 0.5f;
