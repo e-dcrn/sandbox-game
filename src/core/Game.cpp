@@ -75,7 +75,7 @@ bool Game::init() {
     Factory::create_wall(registry, 125.0f, 300.0f, 100.0f, 500.0f);
     Factory::create_wall(registry, 899.0f, 300.0f, 100.0f, 500.0f);
 
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 200; ++i) {
         float randX = 200.0f + (rand() % 600); 
         float randY = 100.0f + (rand() % 200);
         Factory::create_ball(registry, randX, randY);

@@ -22,8 +22,8 @@ namespace Factory {
 
         registry.emplace<Position>(entity, x, y);
         registry.emplace<Velocity>(entity, 0.0f, 0.0f);
-        registry.emplace<Circle>(entity, 30.0f, SDL_Color{255, 0, 0, 255});
-        registry.emplace<Collider>(entity, ColliderType::CIRCLE, 30.0f, 0.0f, 0.0f);
+        registry.emplace<Circle>(entity, 3.0f, SDL_Color{255, 0, 0, 255});
+        registry.emplace<Collider>(entity, ColliderType::CIRCLE, 3.0f, 0.0f, 0.0f);
 
         add_physics(registry, entity, 1.0f, true);
 

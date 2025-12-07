@@ -3,6 +3,8 @@
 #include <imgui.h>
 #include <SDL_keyboard.h>
 #include <SDL_keycode.h>
+#include "common/Components.hpp"
+#include "physics/Components.hpp"
 
 void render_debug_window(const ImGuiIO& io, const Game& game) {
     ImGui::Begin("Debug");
@@ -14,6 +16,23 @@ void render_debug_window(const ImGuiIO& io, const Game& game) {
     } else {
         ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "RUNNING");
     }
+
+    // --- Mechanical Energy Calculation ---
+    float total_mechanical_energy = 0.0f;
+    const float g = 980.0f;
+    auto view = game.registry.view<const Position, const Velocity, const RigidBody, const Circle>();
+
+    view.each([&total_mechanical_energy, &g](auto& pos, auto& vel, auto& body, auto& ){
+        if (body.inverseMass > 0) {
+            float mass = body.mass;
+            float kinetic_energy = 0.5f * mass * (vel.x * vel.x + vel.y * vel.y);
+            float potential_energy = mass * g * (500.0f - pos.y);
+            total_mechanical_energy += kinetic_energy + potential_energy;
+        }
+    });
+    total_mechanical_energy /= 1000.0f; // Convert to kJ
+    ImGui::Text("Total Mechanical Energy: %.2f", total_mechanical_energy);
+    // --- End ---
 
     ImGui::End();
     ImGui::ShowDemoWindow();
