@@ -3,6 +3,9 @@
 #include <entt/entt.hpp>
 #include <SDL.h>
 #include "physics/PhysicsSystem.hpp"
+#include <deque>
+#include <string>
+#include <sstream>
 
 // Forward declaration
 struct ImGuiIO;
@@ -10,6 +13,8 @@ struct ImGuiIO;
 class Game {
 public:
     entt::registry registry;
+    std::deque<std::string> m_history;
+    static const size_t MAX_HISTORY_SIZE = 900; // 15 seconds at 60 FPS
     bool m_paused = false;
     bool m_step_once = false;
     float time_scale = 1.0f;

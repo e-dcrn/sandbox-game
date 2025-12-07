@@ -6,11 +6,14 @@
 #include "render/DebugSystem.hpp"
 #include "EntityFactory.hpp"
 
+#include "utils/Serialization.hpp"
+
 #include <imgui.h>
 #include <imgui_impl_sdl2.h>
 #include <imgui_impl_sdlrenderer2.h>
 #include <cstdlib>
 #include <ctime>
+
 
 const int SCREEN_WIDTH = 1024;
 const int SCREEN_HEIGHT = 612;
@@ -19,6 +22,7 @@ Game::Game() : window(nullptr), renderer(nullptr), io(nullptr), is_running(false
 }
 
 Game::~Game() {
+    registry.clear();
     // Cleanup ImGui
     ImGui_ImplSDLRenderer2_Shutdown();
     ImGui_ImplSDL2_Shutdown();
@@ -86,6 +90,10 @@ void Game::run() {
     while (is_running) {
         process_events();
 
+        if (!m_paused) {
+            take_snapshot(*this);
+        }
+
         if (!m_paused || m_step_once) {
             update();
             m_step_once = false;
@@ -146,11 +154,15 @@ void Game::render() {
 }
 
 void Game::reset() {
-    // Find all balls and delete them
-    auto view = registry.view<const Circle>();
-    for (auto entity : view) {
-        registry.destroy(entity);
-    }
+    // Clear the entire registry
+    registry.clear();
+    m_history.clear();
+
+    // Re-create the scene
+    Factory::create_wall(registry, 512.0f, 50.0f, 824.0f, 100.0f);
+    Factory::create_wall(registry, 512.0f, 550.0f, 824.0f, 100.0f);
+    Factory::create_wall(registry, 125.0f, 300.0f, 100.0f, 500.0f);
+    Factory::create_wall(registry, 899.0f, 300.0f, 100.0f, 500.0f);
 
     // Create new balls
     Factory::create_balls_in_circle(registry, 500.0f, 300.0f, 200.0f, 2000);
