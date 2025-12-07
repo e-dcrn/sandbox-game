@@ -7,6 +7,6 @@
 struct ImGuiIO;
 class Game;
 
-void render_debug_window(const ImGuiIO& io, const Game& game);
+void render_debug_window(const ImGuiIO& io, Game& game);
 void handle_debug_input(Game& game, const SDL_Event& event);
 

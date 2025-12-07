@@ -41,4 +41,16 @@ namespace Factory {
     
     return entity;
 }
+
+    inline void create_balls_in_circle(entt::registry& registry, float centerX, float centerY, float maxRadius, int count) {
+        for (int i = 0; i < count; ++i) {
+            float angle = ((rand() % 6283) / 1000.0f);
+            float random0to1 = (rand() % 1000) / 1000.0f;
+            float distance = maxRadius * std::sqrt(random0to1);
+            float randX = centerX + std::cos(angle) * distance;
+            float randY = centerY + std::sin(angle) * distance;
+
+            create_ball(registry, randX, randY);
+        }
+    }
 }

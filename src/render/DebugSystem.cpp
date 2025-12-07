@@ -5,12 +5,14 @@
 #include <SDL_keycode.h>
 #include "common/Components.hpp"
 #include "physics/Components.hpp"
+#include "core/EntityFactory.hpp"
+#include <cstdlib>
+#include <ctime>
 
-void render_debug_window(const ImGuiIO& io, const Game& game) {
+void render_debug_window(const ImGuiIO& io, Game& game) {
     ImGui::Begin("Debug");
     ImGui::Text("Framerate: %.1f FPS", io.Framerate);
-    ImGui::Text("Entities: %zu", game.registry.storage<entt::entity>()->size());
-
+    ImGui::Text("Entities: %zu", game.registry.storage<entt::entity>().size());
     if (game.m_paused) {
         ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "PAUSED");
     } else {
@@ -53,6 +55,9 @@ void handle_debug_input(Game& game, const SDL_Event& event) {
                 game.m_paused = true;
                 game.m_step_once = true;
                 game.time_scale = -1.0f;
+                break;
+            case SDLK_r:
+                game.reset();
                 break;
         }
     }

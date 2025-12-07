@@ -19,6 +19,7 @@ public:
 
     bool init();
     void run();
+    void reset();
 
 private:
     void process_events();
