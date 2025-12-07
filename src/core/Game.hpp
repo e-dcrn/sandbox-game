@@ -3,6 +3,7 @@
 #include <entt/entt.hpp>
 #include <SDL.h>
 #include "physics/PhysicsSystem.hpp"
+#include "render/Renderer.hpp" // <--- AJOUT : Ta nouvelle classe de rendu GPU
 #include <deque>
 #include <string>
 #include <sstream>
@@ -32,7 +33,13 @@ private:
     void render();
 
     SDL_Window* window;
-    SDL_Renderer* renderer;
+    
+    // MODIFICATION : OpenGL a besoin d'un Contexte, pas d'un Renderer SDL
+    SDL_GLContext glContext; 
+    
+    // AJOUT : Ton système de rendu Instanced
+    Renderer m_renderer;
+
     ImGuiIO* io;
     PhysicsSystem physics_system;
     bool is_running;

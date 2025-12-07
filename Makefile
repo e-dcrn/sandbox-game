@@ -52,7 +52,10 @@ SOURCES += $(IMGUI_DIR)/imgui.cpp \
            $(IMGUI_DIR)/imgui_tables.cpp \
            $(IMGUI_DIR)/imgui_widgets.cpp \
            $(IMGUI_DIR)/backends/imgui_impl_sdl2.cpp \
-           $(IMGUI_DIR)/backends/imgui_impl_sdlrenderer2.cpp
+           $(IMGUI_DIR)/backends/imgui_impl_opengl3.cpp
+
+# Ajout de la lib OpenGL système
+LIBS += -lGL
 
 # --- Objets ---
 # On transforme les .cpp en .o et on les place dans le dossier de build spécifique
