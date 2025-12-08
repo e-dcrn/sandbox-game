@@ -112,10 +112,25 @@ void Game::render() {
     int w, h;
     SDL_GetWindowSize(window, &w, &h);
     glViewport(0, 0, w, h);
-    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    glClearColor(255.0f, 255.0f, 255.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
-
     m_renderer.render(registry, w, h);
+
+    ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
+    auto wall_view = registry.view<Position, Collider>();
+    
+    wall_view.each([&](const auto& pos, const auto& col) {
+        if (col.type == ColliderType::BOX) {
+            // ImGui utilise des coordonnées écran, parfait pour nous
+            float x1 = pos.x - col.width * 0.5f;
+            float y1 = pos.y - col.height * 0.5f;
+            float x2 = pos.x + col.width * 0.5f;
+            float y2 = pos.y + col.height * 0.5f;
+            
+            // Rectangle Rouge, rempli
+            draw_list->AddRectFilled(ImVec2(x1, y1), ImVec2(x2, y2), IM_COL32(200, 50, 50, 255));
+        }
+    });
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -130,5 +145,5 @@ void Game::reset() {
     Factory::create_wall(registry, 512.0f, 550.0f, 824.0f, 100.0f);
     Factory::create_wall(registry, 125.0f, 300.0f, 100.0f, 500.0f);
     Factory::create_wall(registry, 899.0f, 300.0f, 100.0f, 500.0f);
-    Factory::create_balls_in_circle(registry, 500.0f, 300.0f, 200.0f, 2000);
+    Factory::create_balls_in_circle(registry, 500.0f, 300.0f, 200.0f, 9000);
 }
