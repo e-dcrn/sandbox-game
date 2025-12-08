@@ -5,6 +5,10 @@ void PhysicsSystem::init() {
     force_registry.add([](entt::registry& r, float /*dt*/) { 
         Forces::apply_gravity(r, 980.0f); 
     });
+
+    hash_grid.resize(HASH_SIZE);
+    for(auto& cell : hash_grid) cell.particle_indices.reserve(16);
+    cache.reserve(3000);
 }
 
 void PhysicsSystem::update(entt::registry& registry, float dt) {
@@ -20,7 +24,7 @@ void PhysicsSystem::update(entt::registry& registry, float dt) {
         force_registry.apply_all(registry, sub_dt);
 
         auto view = registry.view<RigidBody, Position, Velocity, Collider, ForceAccumulator>();
-        view.each([&registry, sub_dt, this](const auto& body, auto& pos, auto& vel, const auto& col, const auto& forces) {
+        view.each([&registry, sub_dt, this](const auto& body, auto& pos, auto& vel, const auto& /*col*/, const auto& forces) {
             if (body.inverseMass == 0) return;
 
             float acc_x = forces.x * body.inverseMass;
@@ -30,29 +34,92 @@ void PhysicsSystem::update(entt::registry& registry, float dt) {
             float dx = vel.x * sub_dt;
             float dy = vel.y * sub_dt;
 
-            RayHit wall_hit = sweep_static_collisions(registry, pos, col, dx, dy);
+            // RayHit wall_hit = sweep_static_collisions(registry, pos, col, dx, dy);
+            RayHit wall_hit;
             wall_hit.hit = false;
             apply_continuous_movement(pos, vel, body, wall_hit, dx, dy, sub_dt);
         });
 
-        solve_collisions(registry);
+        build_grid_and_cache(registry);
+        solve_collisions();
+        apply_changes_to_registry(registry);
     }
 }
 
-long PhysicsSystem::get_hash_key(float x, float y) const {
-    int cell_x = (int)std::floor(x / CELL_SIZE);
-    int cell_y = (int)std::floor(y / CELL_SIZE);
-    return ((long)cell_x << 32) | (long)cell_y;
+int PhysicsSystem::get_spatial_hash(int cx, int cy) const {
+    const int p1 = 73856093;
+    const int p2 = 19349663;
+    int n = ((cx * p1) ^ (cy * p2)) % HASH_SIZE;
+    if (n < 0) n += HASH_SIZE;
+    return n;
 }
 
-void PhysicsSystem::build_grid(entt::registry& registry) {
-    spatial_grid.clear();
-    auto view = registry.view<Position, Velocity>();
+void PhysicsSystem::build_grid_and_cache(entt::registry& registry) {
+    // 1. Reset (Rapide)
+    for(auto& cell : hash_grid) cell.particle_indices.clear();
+    cache.clear();
+
+    // 2. Copie Registry -> Cache
+    // On prend TOUT (Murs et Balles) pour que les collisions soient gérées dans le cache
+    auto view = registry.view<Position, Collider>();
     
-    view.each([&](auto entity, const auto& pos, const auto& /*vel*/) {
-        long key = get_hash_key(pos.x, pos.y);
-        spatial_grid[key].push_back(entity);
+    view.each([this, &registry](auto entity, const auto& pos, const auto& col) {
+        
+        float vx=0, vy=0, invMass=0, rest=1.0f;
+        
+        if (registry.all_of<Velocity>(entity)) {
+            const auto& vel = registry.get<Velocity>(entity);
+            vx = vel.x; vy = vel.y;
+        }
+        if (registry.all_of<RigidBody>(entity)) {
+            const auto& body = registry.get<RigidBody>(entity);
+            invMass = body.inverseMass;
+            rest = body.restitution;
+        }
+
+        int type = (col.type == ColliderType::CIRCLE) ? 0 : 1;
+        float r = col.radius;
+        float hw = col.width * 0.5f;
+        float hh = col.height * 0.5f;
+        
+        // Calcul du rayon englobant pour la grille (Broadphase)
+        float cache_r = (type == 0) ? r : std::sqrt(hw*hw + hh*hh);
+
+        cache.push_back({entity, pos.x, pos.y, vx, vy, cache_r, invMass, rest, type, hw, hh});
+        int idx = (int)cache.size() - 1;
+        
+        float obj_hw = (type == 0) ? r : hw;
+        float obj_hh = (type == 0) ? r : hh;
+
+        // On convertit les coordonnées Monde -> Coordonnées Grille
+        // std::floor est important pour gérer correctement les coordonnées négatives (hors écran)
+        int min_grid_x = (int)std::floor((pos.x - obj_hw) / CELL_SIZE);
+        int max_grid_x = (int)std::floor((pos.x + obj_hw) / CELL_SIZE);
+        int min_grid_y = (int)std::floor((pos.y - obj_hh) / CELL_SIZE);
+        int max_grid_y = (int)std::floor((pos.y + obj_hh) / CELL_SIZE);
+
+        // On insère l'objet dans TOUTES les cellules qu'il touche
+        for (int y = min_grid_y; y <= max_grid_y; ++y) {
+            for (int x = min_grid_x; x <= max_grid_x; ++x) {
+                int hash = get_spatial_hash(x, y);
+                hash_grid[hash].particle_indices.push_back(idx);
+            }
+        }
     });
+}
+
+void PhysicsSystem::apply_changes_to_registry(entt::registry& registry) {
+    // Copie Cache -> Registry (Seulement pour les dynamiques)
+    for(const auto& p : cache) {
+        if (p.invMass > 0) {
+            auto& pos = registry.get<Position>(p.entity);
+            auto& vel = registry.get<Velocity>(p.entity);
+            pos.x = p.x;
+            pos.y = p.y;
+            vel.x = p.vx;
+            vel.y = p.vy;
+        }
+    }
 }
 
 float PhysicsSystem::combine_restitution(float rA, float rB) {
@@ -61,166 +128,143 @@ float PhysicsSystem::combine_restitution(float rA, float rB) {
 }
 
 // Cette fonction ne touche PAS aux positions (pos.x), seulement aux vitesses (vel.x)
-void PhysicsSystem::apply_impulse_response(
-    Velocity& velA, float invMassA,
-    Velocity& velB, float invMassB,
-    const RigidBody& bodyA, const RigidBody& bodyB,
-    const Vect2& normal) 
-{
-    // 1. Calcul de la vitesse relative
-    float relVelX = velA.x - velB.x;
-    float relVelY = velA.y - velB.y;
-    
-    // 2. Vitesse le long de la normale
+void PhysicsSystem::apply_impulse_response(ParticleCache& pA, ParticleCache& pB, const Vect2& normal) {
+    float relVelX = pA.vx - pB.vx;
+    float relVelY = pA.vy - pB.vy;
     float velAlongNormal = relVelX * normal.x + relVelY * normal.y;
 
-    // Si les objets s'éloignent déjà, on ne fait rien
     if (velAlongNormal > 0) return;
 
-    // 3. Calcul de la restitution (rebond)
-    float e = combine_restitution(bodyA.restitution, bodyB.restitution);
-    
-    // Seuil anti-vibration (si la collision est très lente, pas de rebond)
-    if (velAlongNormal > -0.1f && velAlongNormal < 0.1f) {
-        e = 0.0f;
-    }
+    float e = combine_restitution(pA.restitution, pB.restitution);
+    if (velAlongNormal > -0.1f && velAlongNormal < 0.1f) e = 0.0f;
 
-    // 4. Calcul de l'impulsion scalaire j
     float j = -(1.0f + e) * velAlongNormal;
-    float totalMass = invMassA + invMassB;
+    float totalMass = pA.invMass + pB.invMass;
     if (totalMass > 0) j /= totalMass;
 
-    // 5. Application de l'impulsion sur les vitesses
-    float impulseX = normal.x * j;
-    float impulseY = normal.y * j;
+    float impX = normal.x * j;
+    float impY = normal.y * j;
 
-    velA.x += impulseX * invMassA; // A recule
-    velA.y += impulseY * invMassA;
-    
-    velB.x -= impulseX * invMassB; // B avance
-    velB.y -= impulseY * invMassB;
+    pA.vx += impX * pA.invMass;
+    pA.vy += impY * pA.invMass;
+    pB.vx -= impX * pB.invMass;
+    pB.vy -= impY * pB.invMass;
 }
 
-void PhysicsSystem::resolve_pair(
-    Position& posA, Velocity& velA, const RigidBody& bodyA, const Collider& colA,
-    Position& posB, Velocity& velB, const RigidBody& bodyB, const Collider& colB
-) {
+void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
     CollisionResult result = {false, {0,0}, 0};
 
-    if (colA.type == ColliderType::CIRCLE && colB.type == ColliderType::CIRCLE) {
-        result = check_circle_circle({posA.x, posA.y}, colA.radius, {posB.x, posB.y}, colB.radius);
+    // --- 1. DÉTECTION (Adaptation des données Cache vers tes fonctions de check) ---
+    // Note : p.hw et p.hh sont les demi-largeurs, tes fonctions attendent souvent width/height (x2)
+    
+    if (pA.type == 0 && pB.type == 0) { // Circle vs Circle
+        result = check_circle_circle({pA.x, pA.y}, pA.r, {pB.x, pB.y}, pB.r);
     }
-    else if (colA.type == ColliderType::CIRCLE && colB.type == ColliderType::BOX) {
-        result = check_circle_box({posA.x, posA.y}, colA.radius, {posB.x, posB.y}, {colB.width, colB.height});
+    else if (pA.type == 0 && pB.type == 1) { // Circle vs Box
+        result = check_circle_box({pA.x, pA.y}, pA.r, {pB.x, pB.y}, {pB.hw * 2.0f, pB.hh * 2.0f});
     }
-    else if (colA.type == ColliderType::BOX && colB.type == ColliderType::CIRCLE) {
-        result = check_circle_box({posB.x, posB.y}, colB.radius, {posA.x, posA.y}, {colA.width, colA.height});
+    else if (pA.type == 1 && pB.type == 0) { // Box vs Circle
+        result = check_circle_box({pB.x, pB.y}, pB.r, {pA.x, pA.y}, {pA.hw * 2.0f, pA.hh * 2.0f});
+        // Inversion normale car A vs B
         result.normal_vector.x *= -1.0f;
         result.normal_vector.y *= -1.0f;
     }
-    else {
-        result = check_box_box({posA.x, posA.y}, {colA.width, colA.height}, {posB.x, posB.y}, {colB.width, colB.height});
+    else { // Box vs Box
+        result = check_box_box({pA.x, pA.y}, {pA.hw * 2.0f, pA.hh * 2.0f}, {pB.x, pB.y}, {pB.hw * 2.0f, pB.hh * 2.0f});
     }
 
+    // --- 2. RÉSOLUTION (Ton Algorithme Exact) ---
+
     if (result.is_colliding) {
-        float invMassA = bodyA.inverseMass;
-        float invMassB = bodyB.inverseMass;
+        float invMassA = pA.invMass;
+        float invMassB = pB.invMass;
         float totalMass = invMassA + invMassB;
 
         if (totalMass == 0.0f) return;
 
-        float relVelX = (velA.x - velB.x);
-        float relVelY = (velA.y - velB.y);
+        float relVelX = (pA.vx - pB.vx);
+        float relVelY = (pA.vy - pB.vy);
         float velAlongNormal = relVelX * result.normal_vector.x + relVelY * result.normal_vector.y;
         
         if (velAlongNormal > 0) return;
 
         bool solved = false;
+        // Calcul du "Temps à rembobiner" pour trouver le moment exact de l'impact
         float timeToRewind = result.depth / -velAlongNormal;
         const float EPSILON = 0.001f;
+        
         if (velAlongNormal < -EPSILON) {
             float relSpeedSq = relVelX*relVelX + relVelY*relVelY;
+            // Si la vitesse le long de la normale est significative par rapport à la vitesse totale
             if (velAlongNormal * velAlongNormal > 0.01f * relSpeedSq) {
-                if (timeToRewind > 0.05f) timeToRewind = 0.05f;
+                // Clamp timeToRewind pour éviter les bugs si ça explose
+                if (timeToRewind > 0.05f) timeToRewind = 0.05f; 
 
-                posA.x -= velA.x * timeToRewind;
-                posA.y -= velA.y * timeToRewind;
-                posB.x -= velB.x * timeToRewind;
-                posB.y -= velB.y * timeToRewind;
+                // REWIND : On recule les objets dans le temps
+                pA.x -= pA.vx * timeToRewind;
+                pA.y -= pA.vy * timeToRewind;
+                pB.x -= pB.vx * timeToRewind;
+                pB.y -= pB.vy * timeToRewind;
                 solved = true;
             }
         }
 
-        if (!solved) { // Old version fallback
+        if (!solved) { // Fallback : Projection classique (Si collision statique ou trop lente)
             float move = result.depth / totalMass;
-            posA.x += result.normal_vector.x * invMassA * move;
-            posA.y += result.normal_vector.y * invMassA * move;
-            posB.x -= result.normal_vector.x * invMassB * move;
-            posB.y -= result.normal_vector.y * invMassB * move;
+            pA.x += result.normal_vector.x * invMassA * move;
+            pA.y += result.normal_vector.y * invMassA * move;
+            pB.x -= result.normal_vector.x * invMassB * move;
+            pB.y -= result.normal_vector.y * invMassB * move;
         }
 
-        apply_impulse_response(velA, bodyA.inverseMass, 
-                               velB, bodyB.inverseMass, 
-                               bodyA, bodyB, result.normal_vector);
+        // Application de l'impulsion (Rebond)
+        apply_impulse_response(pA, pB, result.normal_vector);
         
+        // RE-FORWARD : Si on a rembobiné, on ré-avance avec les NOUVELLES vitesses
         if(solved){
-            posA.x += velA.x * timeToRewind;
-            posA.y += velA.y * timeToRewind;
-            posB.x += velB.x * timeToRewind;
-            posB.y += velB.y * timeToRewind;
+            pA.x += pA.vx * timeToRewind;
+            pA.y += pA.vy * timeToRewind;
+            pB.x += pB.vx * timeToRewind;
+            pB.y += pB.vy * timeToRewind;
         }
     }
 }
 
-void PhysicsSystem::solve_collisions(entt::registry& registry) {
-    auto dynamics = registry.view<Position, Velocity, RigidBody, Collider>();
-    auto statics = registry.view<Position, RigidBody, Collider>(entt::exclude<Velocity>);
+void PhysicsSystem::solve_collisions() {
+    // On itère sur le CACHE linéaire (Ultra rapide)
+    for(int i = 0; i < (int)cache.size(); ++i) {
+        ParticleCache& pA = cache[i];
+        if (pA.invMass == 0) continue; // Les murs ne cherchent pas
 
-    dynamics.each([&statics](Position& posA, Velocity& velA, const RigidBody& bodyA, const Collider& colA) {
-        statics.each([&](const Position& posB, const RigidBody& bodyB, const Collider& colB) {
-            Velocity staticVel = {0.0f, 0.0f}; 
-            resolve_pair(posA, velA, bodyA, colA, 
-                         const_cast<Position&>(posB), staticVel, bodyB, colB); 
-        });
-    });
+        int cx = (int)std::floor(pA.x / CELL_SIZE);
+        int cy = (int)std::floor(pA.y / CELL_SIZE);
 
-    build_grid(registry);
-    std::unordered_set<long> processed_pairs;
+        // Voisins 3x3
+        for(int dy = -1; dy <= 1; ++dy) {
+            for(int dx = -1; dx <= 1; ++dx) {
+                int hash = get_spatial_hash(cx + dx, cy + dy);
+                const auto& cell = hash_grid[hash];
 
-    dynamics.each([&, this](entt::entity entity_A, Position& posA, Velocity& velA, const RigidBody& bodyA, const Collider& colA) {
-        float startX = posA.x;
-        float startY = posA.y;
-        for (int cell_dx = -1; cell_dx <= 1; ++cell_dx) {
-            for (int cell_dy = -1; cell_dy <= 1; ++cell_dy) {
-                
-                long key = get_hash_key(startX + cell_dx * CELL_SIZE, startY + cell_dy * CELL_SIZE);
-                if (spatial_grid.count(key)) {
-                    for (auto entity_B : spatial_grid.at(key)) {
-                        if (entity_A == entity_B) continue; 
-                        if (!registry.all_of<Velocity>(entity_B)) continue; 
+                for(int other_i : cell.particle_indices) {
+                    if (i == other_i) continue;
+                    ParticleCache& pB = cache[other_i];
 
-                        entt::entity id1 = entity_A;
-                        entt::entity id2 = entity_B;
-                        if (id1 > id2) std::swap(id1, id2);
-                        
-                        long pair_id = ((long)id1 << 32) | (long)id2;
-                        if (processed_pairs.count(pair_id)) continue; 
-                        processed_pairs.insert(pair_id);
+                    // Optimisation "Processed Pairs" via ID (Seulement entre dynamiques)
+                    if (pB.invMass > 0 && pA.entity >= pB.entity) continue;
 
-                        auto& posB = registry.get<Position>(entity_B);
-                        auto& velB = registry.get<Velocity>(entity_B);
-                        const auto& bodyB = registry.get<RigidBody>(entity_B);
-                        const auto& colB = registry.get<Collider>(entity_B);
+                    // Broadphase Cache
+                    float dist_x = std::abs(pA.x - pB.x);
+                    float rSum = pA.r + pB.r;
+                    if (dist_x > rSum) continue;
+                    float dist_y = std::abs(pA.y - pB.y);
+                    if (dist_y > rSum) continue;
 
-                        resolve_pair(
-                            posA, velA, bodyA, colA, 
-                            posB, velB, bodyB, colB
-                        );
-                    }
+                    // Résolution
+                    resolve_pair(pA, pB);
                 }
             }
         }
-    });
+    }
 }
 
 RayHit PhysicsSystem::sweep_static_collisions(entt::registry& registry, 
@@ -269,34 +313,20 @@ RayHit PhysicsSystem::sweep_static_collisions(entt::registry& registry,
 void PhysicsSystem::apply_continuous_movement(Position& pos, Velocity& vel, const RigidBody& body,
                                               const RayHit& hit, float dx, float dy, float dt) {
     if (hit.hit) {
-        // --- ETAPE 1 : GESTION POSITION (Spécifique Continu) ---
-        // On avance juste au bon endroit
         float safe_t = std::max(0.0f, hit.t - 0.001f);
         pos.x += dx * safe_t;
         pos.y += dy * safe_t;
+        
+        // Calcul manuel de la réponse impulsionnelle pour le CCD
+        float dot = vel.x * hit.normal.x + vel.y * hit.normal.y;
+        float j = -(1.0f + body.restitution * 0.5f) * dot; // Rebond contre mur statique
+        
+        vel.x += j * hit.normal.x;
+        vel.y += j * hit.normal.y;
 
-        // --- ETAPE 2 : REPONSE PHYSIQUE (Partagée) ---
-        // On crée un faux corps statique pour le mur
-        Velocity wallVel = {0,0};
-        RigidBody wallBody; 
-        wallBody.inverseMass = 0; // Masse infinie
-        wallBody.restitution = 0.5f; 
-
-        // On réutilise la même logique de rebond !
-        apply_impulse_response(vel, body.inverseMass, 
-                               wallVel, 0.0f, 
-                               body, wallBody, {hit.normal.x, hit.normal.y});
-
-        float remaining_t = 1.0f - hit.t;
-
-        // S'il reste du temps significatif, on bouge avec la NOUVELLE vitesse
-        if (remaining_t > 0.0f) {
-            // Distance = Vitesse_Actuelle * Temps_Total_Frame * Portion_Restante
-            pos.x += vel.x * dt * remaining_t;
-            pos.y += vel.y * dt * remaining_t;
-        }        
+        float rem = 1.0f - hit.t;
+        if (rem > 0) { pos.x += vel.x * dt * rem; pos.y += vel.y * dt * rem; }
     } else {
-        pos.x += dx;
-        pos.y += dy;
+        pos.x += dx; pos.y += dy;
     }
 }
