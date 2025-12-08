@@ -36,7 +36,8 @@ private:
     std::vector<ParticleCache> cache; // Toutes les données contiguës ici
 
     int get_spatial_hash(int cx, int cy) const;
-    void build_grid_and_cache(entt::registry& registry);
+    void build_cache_from_registry(entt::registry& registry); 
+    void refresh_grid_from_cache();
     void apply_changes_to_registry(entt::registry& registry);
 
     ForceRegistry force_registry;

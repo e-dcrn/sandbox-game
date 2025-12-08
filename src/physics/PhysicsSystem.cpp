@@ -43,7 +43,10 @@ void PhysicsSystem::update(entt::registry& registry, float dt) {
             apply_continuous_movement(pos, vel, body, wall_hit, dx, dy, sub_dt);
         });
 
-        build_grid_and_cache(registry);
+        build_cache_from_registry(registry);
+        for(int j = 0; j < 6; ++j){
+            solve_collisions();
+        }
         solve_collisions();
         apply_changes_to_registry(registry);
     }
@@ -57,58 +60,57 @@ int PhysicsSystem::get_spatial_hash(int cx, int cy) const {
     return n;
 }
 
-void PhysicsSystem::build_grid_and_cache(entt::registry& registry) {
-    // 1. Reset (Rapide)
-    for(auto& cell : hash_grid) cell.particle_indices.clear();
-    cache.clear();
-
-    // 2. Copie Registry -> Cache
-    // On prend TOUT (Murs et Balles) pour que les collisions soient gérées dans le cache
+void PhysicsSystem::build_cache_from_registry(entt::registry& registry) {
+    cache.clear(); // On vide le cache, mais pas la grille (fait ailleurs)
+    
     auto view = registry.view<Position, Collider>();
     
     view.each([this, &registry](auto entity, const auto& pos, const auto& col) {
-        
-        float vx=0, vy=0, invMass=0, rest=1.0f;
-        
+        float vx = 0, vy = 0, invMass = 0, restitution = 1.0f;
+
+        if (registry.all_of<RigidBody>(entity)) {
+            const auto& body = registry.get<RigidBody>(entity);
+            invMass = body.inverseMass;
+            restitution = body.restitution;
+        }
         if (registry.all_of<Velocity>(entity)) {
             const auto& vel = registry.get<Velocity>(entity);
             vx = vel.x; vy = vel.y;
         }
-        if (registry.all_of<RigidBody>(entity)) {
-            const auto& body = registry.get<RigidBody>(entity);
-            invMass = body.inverseMass;
-            rest = body.restitution;
-        }
 
         int type = (col.type == ColliderType::CIRCLE) ? 0 : 1;
-        float r = col.radius;
         float hw = col.width * 0.5f;
         float hh = col.height * 0.5f;
         
-        // Calcul du rayon englobant pour la grille (Broadphase)
-        float cache_r = (type == 0) ? r : std::sqrt(hw*hw + hh*hh);
+        // Rayon effectif pour le broadphase (Diagonale pour les boites)
+        float r = (type == 0) ? col.radius : std::sqrt(hw*hw + hh*hh); 
 
-        cache.push_back({entity, pos.x, pos.y, vx, vy, cache_r, invMass, rest, type, hw, hh});
-        int idx = (int)cache.size() - 1;
-        
-        float obj_hw = (type == 0) ? r : hw;
-        float obj_hh = (type == 0) ? r : hh;
+        // On remplit le cache
+        cache.push_back({entity, pos.x, pos.y, vx, vy, r, invMass, restitution, type, hw, hh});
+    });
+}
 
-        // On convertit les coordonnées Monde -> Coordonnées Grille
-        // std::floor est important pour gérer correctement les coordonnées négatives (hors écran)
-        int min_grid_x = (int)std::floor((pos.x - obj_hw) / CELL_SIZE);
-        int max_grid_x = (int)std::floor((pos.x + obj_hw) / CELL_SIZE);
-        int min_grid_y = (int)std::floor((pos.y - obj_hh) / CELL_SIZE);
-        int max_grid_y = (int)std::floor((pos.y + obj_hh) / CELL_SIZE);
+void PhysicsSystem::refresh_grid_from_cache() {
+    for(auto& cell : hash_grid) cell.particle_indices.clear();
 
-        // On insère l'objet dans TOUTES les cellules qu'il touche
-        for (int y = min_grid_y; y <= max_grid_y; ++y) {
-            for (int x = min_grid_x; x <= max_grid_x; ++x) {
+    for(int i = 0; i < (int)cache.size(); ++i) {
+        const auto& p = cache[i];
+
+        float obj_hw = (p.type == 0) ? p.r : p.hw;
+        float obj_hh = (p.type == 0) ? p.r : p.hh;
+
+        int startX = (int)std::floor((p.x - obj_hw) / CELL_SIZE);
+        int endX   = (int)std::floor((p.x + obj_hw) / CELL_SIZE);
+        int startY = (int)std::floor((p.y - obj_hh) / CELL_SIZE);
+        int endY   = (int)std::floor((p.y + obj_hh) / CELL_SIZE);
+
+        for (int y = startY; y <= endY; ++y) {
+            for (int x = startX; x <= endX; ++x) {
                 int hash = get_spatial_hash(x, y);
-                hash_grid[hash].particle_indices.push_back(idx);
+                hash_grid[hash].particle_indices.push_back(i);
             }
         }
-    });
+    }
 }
 
 void PhysicsSystem::apply_changes_to_registry(entt::registry& registry) {
@@ -234,6 +236,7 @@ void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
 }
 
 void PhysicsSystem::solve_collisions() {
+    refresh_grid_from_cache();
     // On itère sur le CACHE linéaire (Ultra rapide)
     for(int i = 0; i < (int)cache.size(); ++i) {
         ParticleCache& pA = cache[i];
