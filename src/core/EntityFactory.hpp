@@ -13,6 +13,7 @@ namespace Factory {
         
         registry.emplace<RigidBody>(entity, mass, inv_mass, bounce);
         registry.emplace<ForceAccumulator>(entity, 0.0f, 0.0f);
+        // registry.emplace<UseRaycast>(entity);
 
         if (gravity) registry.emplace<GravityAffected>(entity);
     }

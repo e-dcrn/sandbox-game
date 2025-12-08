@@ -24,7 +24,7 @@ void PhysicsSystem::update(entt::registry& registry, float dt) {
         force_registry.apply_all(registry, sub_dt);
 
         auto view = registry.view<RigidBody, Position, Velocity, Collider, ForceAccumulator>();
-        view.each([&registry, sub_dt, this](const auto& body, auto& pos, auto& vel, const auto& /*col*/, const auto& forces) {
+        view.each([&registry, sub_dt, this](auto entity, const auto& body, auto& pos, auto& vel, const auto& col, const auto& forces) {
             if (body.inverseMass == 0) return;
 
             float acc_x = forces.x * body.inverseMass;
@@ -37,6 +37,9 @@ void PhysicsSystem::update(entt::registry& registry, float dt) {
             // RayHit wall_hit = sweep_static_collisions(registry, pos, col, dx, dy);
             RayHit wall_hit;
             wall_hit.hit = false;
+            if (registry.any_of<UseRaycast>(entity)) {
+                wall_hit = sweep_static_collisions(registry, pos, col, dx, dy);
+            }
             apply_continuous_movement(pos, vel, body, wall_hit, dx, dy, sub_dt);
         });
 

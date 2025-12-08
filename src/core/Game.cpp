@@ -16,7 +16,7 @@
 
 
 const int SCREEN_WIDTH = 1024;
-const int SCREEN_HEIGHT = 612;
+const int SCREEN_HEIGHT = 611;
 
 Game::Game() : window(nullptr), renderer(nullptr), io(nullptr), is_running(false), mouse_x(0), mouse_y(0) {
 }

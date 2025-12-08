@@ -19,3 +19,5 @@ struct Rectangle {
 };
 
 struct FollowsMouse {};
+
+struct UseRaycast {};
