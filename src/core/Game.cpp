@@ -55,7 +55,7 @@ bool Game::init() {
     }
 
     // Create Renderer
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED /*| SDL_RENDERER_PRESENTVSYNC*/);
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (!renderer) {
         log_error("Renderer could not be created", SDL_GetError());
         return false;
@@ -79,7 +79,8 @@ bool Game::init() {
     Factory::create_wall(registry, 125.0f, 300.0f, 100.0f, 500.0f);
     Factory::create_wall(registry, 899.0f, 300.0f, 100.0f, 500.0f);
 
-    Factory::create_balls_in_circle(registry, 500.0f, 300.0f, 200.0f, 2000);
+    // Factory::create_balls_in_circle(registry, 500.0f, 300.0f, 200.0f, 2000);
+    Factory::create_spinning_box(registry,400, 300, 200, 20, 0.0f, 0.0f);
 
     is_running = true;
     log_info("Game initialized successfully.");
@@ -166,4 +167,5 @@ void Game::reset() {
 
     // Create new balls
     Factory::create_balls_in_circle(registry, 500.0f, 300.0f, 200.0f, 2000);
+    Factory::create_spinning_box(registry,400, 300, 200, 20, 0.0f, 0.0f);
 }

@@ -1,47 +1,45 @@
 #pragma once
-#include <entt/entt.hpp>
-#include <SDL2/SDL.h>
-
-#include "../common/Components.hpp"
-#include "../physics/Components.hpp"
+#include "EntityBuilder.hpp"
 
 namespace Factory {
 
-    inline void add_physics(entt::registry& registry, entt::entity entity, float mass, float bounce = 1.0f, bool gravity = true) {
-        
-        float inv_mass = (mass > 0) ? 1.0f / mass : 0.0f;
-        
-        registry.emplace<RigidBody>(entity, mass, inv_mass, bounce);
-        registry.emplace<ForceAccumulator>(entity, 0.0f, 0.0f);
-        // registry.emplace<UseRaycast>(entity);
-
-        if (gravity) registry.emplace<GravityAffected>(entity);
-    }
-
     inline entt::entity create_ball(entt::registry& registry, float x, float y) {
-        auto entity = registry.create();
-
-        registry.emplace<Position>(entity, x, y);
-        registry.emplace<Velocity>(entity, 0.0f, 0.0f);
-        registry.emplace<Circle>(entity, 3.0f, SDL_Color{255, 0, 0, 255});
-        registry.emplace<Collider>(entity, ColliderType::CIRCLE, 3.0f, 0.0f, 0.0f);
-
-        add_physics(registry, entity, 1.0f, 0.90f, true);
-
-        return entity;
+        return EntityBuilder(registry)
+            .asCircle(3.0f)
+            .at(x, y)
+            .withColor(255, 0, 0)
+            .withMass(1.0f)          // Masse 1kg -> Inertie calculée auto
+            .withPhysicsMaterial(1.0f) // Ça rebondit bien
+            .withCollider()
+            .withGravity()
+            .build();
     }
 
     inline entt::entity create_wall(entt::registry& registry, float x, float y, float w, float h) {
-    auto entity = registry.create();
-    
-    registry.emplace<Position>(entity, x, y);
-    registry.emplace<Rectangle>(entity, w, h, SDL_Color{100, 100, 100, 255}); // Gris
-    registry.emplace<Collider>(entity, ColliderType::BOX, 0.0f, w, h);
-    
-    add_physics(registry, entity, 0.0f, 1.0f, false); 
-    
-    return entity;
-}
+        return EntityBuilder(registry)
+            .asBox(w, h)
+            .at(x, y)
+            .withColor(100, 100, 100)
+            .withMass(0.0f)          // Statique -> Inertie 0 par défaut
+            .withPhysicsMaterial(1.0f)
+            .withCollider()
+            // Pas de gravité
+            .build();
+    }
+
+    inline entt::entity create_spinning_box(entt::registry& registry, float x, float y, float w, float h, float mass, float angular_vel_deg) {
+        return EntityBuilder(registry)
+            .asBox(w, h)
+            .at(x, y)
+            .withColor(255, 165, 0)
+            .withAngularVelocity(angular_vel_deg)
+            .withMass(mass)          // Masse linéaire (ex: 0 pour fixer au sol)
+            .withInertiaMass(10.0f)  // <--- L'astuce : On force une masse pour l'inertie !
+            .withPhysicsMaterial(1.0f)
+            .withCollider()
+            .withGravity() // Si mass=0, la gravité ne fera rien (invMass=0), mais le tag est là.
+            .build();
+    }
 
     inline void create_balls_in_circle(entt::registry& registry, float centerX, float centerY, float maxRadius, int count) {
         for (int i = 0; i < count; ++i) {

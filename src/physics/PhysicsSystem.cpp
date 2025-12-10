@@ -23,9 +23,9 @@ void PhysicsSystem::update(entt::registry& registry, float dt) {
 
         force_registry.apply_all(registry, sub_dt);
 
-        auto view = registry.view<RigidBody, Position, Velocity, Collider, ForceAccumulator>();
-        view.each([&registry, sub_dt, this](auto entity, const auto& body, auto& pos, auto& vel, const auto& col, const auto& forces) {
-            if (body.inverseMass == 0) return;
+        auto view = registry.view<RigidBody, Position, Velocity, Rotation, Collider, ForceAccumulator>();
+        view.each([&registry, sub_dt, this](auto entity, const auto& body, auto& pos, auto& vel, auto& rot, const auto& col, const auto& forces) {
+            // if (body.inverseMass == 0) return;
 
             float acc_x = forces.x * body.inverseMass;
             float acc_y = forces.y * body.inverseMass;
@@ -33,6 +33,7 @@ void PhysicsSystem::update(entt::registry& registry, float dt) {
             vel.y += acc_y * sub_dt;
             float dx = vel.x * sub_dt;
             float dy = vel.y * sub_dt;
+            rot.angle += rot.omega * sub_dt;
 
             // RayHit wall_hit = sweep_static_collisions(registry, pos, col, dx, dy);
             RayHit wall_hit;
@@ -45,9 +46,8 @@ void PhysicsSystem::update(entt::registry& registry, float dt) {
 
         build_cache_from_registry(registry);
         for(int j = 0; j < 6; ++j){
-            solve_collisions();
+            solve_collisions(dt);
         }
-        solve_collisions();
         apply_changes_to_registry(registry);
     }
 }
@@ -66,16 +66,31 @@ void PhysicsSystem::build_cache_from_registry(entt::registry& registry) {
     auto view = registry.view<Position, Collider>();
     
     view.each([this, &registry](auto entity, const auto& pos, const auto& col) {
-        float vx = 0, vy = 0, invMass = 0, restitution = 1.0f;
+        float vx = 0, vy = 0;
+        float ax = 0, ay = 0;
+        float invMass = 0, restitution = 1.0f, invInertia = 0.0f;
+        float angle = 0.0f, omega = 0.0f;
 
         if (registry.all_of<RigidBody>(entity)) {
             const auto& body = registry.get<RigidBody>(entity);
             invMass = body.inverseMass;
             restitution = body.restitution;
+            invInertia = body.invInertia;
+
+            if (invMass > 0 && registry.all_of<ForceAccumulator>(entity)) {
+                const auto& forces = registry.get<ForceAccumulator>(entity);
+                ax = forces.x * invMass;
+                ay = forces.y * invMass;
+            }
         }
         if (registry.all_of<Velocity>(entity)) {
             const auto& vel = registry.get<Velocity>(entity);
             vx = vel.x; vy = vel.y;
+        }
+        if (registry.all_of<Rotation>(entity)) {
+            const auto& rot = registry.get<Rotation>(entity);
+            angle = rot.angle;
+            omega = rot.omega;
         }
 
         int type = (col.type == ColliderType::CIRCLE) ? 0 : 1;
@@ -86,7 +101,15 @@ void PhysicsSystem::build_cache_from_registry(entt::registry& registry) {
         float r = (type == 0) ? col.radius : std::sqrt(hw*hw + hh*hh); 
 
         // On remplit le cache
-        cache.push_back({entity, pos.x, pos.y, vx, vy, r, invMass, restitution, type, hw, hh});
+        cache.push_back({
+            entity, 
+            pos.x, pos.y, 
+            vx, vy, 
+            ax, ay,
+            angle, omega, invInertia,
+            r, invMass, restitution, 
+            type, hw, hh
+        });
     });
 }
 
@@ -124,6 +147,13 @@ void PhysicsSystem::apply_changes_to_registry(entt::registry& registry) {
             vel.x = p.vx;
             vel.y = p.vy;
         }
+        if (p.invInertia > 0 || p.invMass > 0) {
+            if (registry.all_of<Rotation>(p.entity)) {
+                auto& rot = registry.get<Rotation>(p.entity);
+                rot.angle = p.angle;
+                rot.omega = p.omega; // C'est ici qu'on sauvegarde le rebond angulaire !
+            }
+        }
     }
 }
 
@@ -132,32 +162,59 @@ float PhysicsSystem::combine_restitution(float rA, float rB) {
     return rA * rB;
 }
 
-// Cette fonction ne touche PAS aux positions (pos.x), seulement aux vitesses (vel.x)
-void PhysicsSystem::apply_impulse_response(ParticleCache& pA, ParticleCache& pB, const Vect2& normal) {
-    float relVelX = pA.vx - pB.vx;
-    float relVelY = pA.vy - pB.vy;
-    float velAlongNormal = relVelX * normal.x + relVelY * normal.y;
+float cross(Vect2 a, Vect2 b) { return a.x * b.y - a.y * b.x; }
+Vect2 cross(float s, Vect2 a) { return {-s * a.y, s * a.x}; }
 
-    if (velAlongNormal > 0) return;
+void PhysicsSystem::apply_impulse_response(ParticleCache& pA, ParticleCache& pB, const CollisionResult& res) {
+    
+    // 1. Vecteurs "Bras de levier" (du Centre au Contact)
+    Vect2 rA = { res.contact_point.x - pA.x, res.contact_point.y - pA.y };
+    Vect2 rB = { res.contact_point.x - pB.x, res.contact_point.y - pB.y };
 
+    // 2. Vitesse relative au POINT DE CONTACT
+    // V_point = V_linear + Omega x Radius
+    Vect2 vA_point = { pA.vx - pA.omega * rA.y, pA.vy + pA.omega * rA.x };
+    Vect2 vB_point = { pB.vx - pB.omega * rB.y, pB.vy + pB.omega * rB.x };
+    
+    float rv_x = vA_point.x - vB_point.x;
+    float rv_y = vA_point.y - vB_point.y;
+
+    // 3. Vitesse le long de la normale
+    float velAlongNormal = rv_x * res.normal_vector.x + rv_y * res.normal_vector.y;
+
+    if (velAlongNormal > 0) return; // S'éloignent déjà
+
+    // 4. Calcul du dénominateur (Masse inverse effective)
+    float rAxN = cross(rA, res.normal_vector); // rA cross Normal
+    float rBxN = cross(rB, res.normal_vector); // rB cross Normal
+    
+    float invMassSum = pA.invMass + pB.invMass 
+                     + (rAxN * rAxN) * pA.invInertia 
+                     + (rBxN * rBxN) * pB.invInertia;
+
+    if (invMassSum == 0.0f) return;
+
+    // 5. Impulsion Scalaire
     float e = combine_restitution(pA.restitution, pB.restitution);
-    if (velAlongNormal > -0.1f && velAlongNormal < 0.1f) e = 0.0f;
-
     float j = -(1.0f + e) * velAlongNormal;
-    float totalMass = pA.invMass + pB.invMass;
-    if (totalMass > 0) j /= totalMass;
+    j /= invMassSum;
 
-    float impX = normal.x * j;
-    float impY = normal.y * j;
+    // 6. Application
+    Vect2 impulse = { res.normal_vector.x * j, res.normal_vector.y * j };
 
-    pA.vx += impX * pA.invMass;
-    pA.vy += impY * pA.invMass;
-    pB.vx -= impX * pB.invMass;
-    pB.vy -= impY * pB.invMass;
+    // Update Linéaire
+    pA.vx += impulse.x * pA.invMass;
+    pA.vy += impulse.y * pA.invMass;
+    pB.vx -= impulse.x * pB.invMass;
+    pB.vy -= impulse.y * pB.invMass;
+
+    // Update Angulaire : dOmega = (r x Impulse) / Inertia
+    pA.omega += cross(rA, impulse) * pA.invInertia;
+    pB.omega -= cross(rB, impulse) * pB.invInertia;
 }
 
-void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
-    CollisionResult result = {false, {0,0}, 0};
+void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB, float dt) {
+    CollisionResult result = {false, {0,0}, 0, {0,0}};
 
     // --- 1. DÉTECTION (Adaptation des données Cache vers tes fonctions de check) ---
     // Note : p.hw et p.hh sont les demi-largeurs, tes fonctions attendent souvent width/height (x2)
@@ -166,10 +223,10 @@ void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
         result = check_circle_circle({pA.x, pA.y}, pA.r, {pB.x, pB.y}, pB.r);
     }
     else if (pA.type == 0 && pB.type == 1) { // Circle vs Box
-        result = check_circle_box({pA.x, pA.y}, pA.r, {pB.x, pB.y}, {pB.hw * 2.0f, pB.hh * 2.0f});
+        result = check_circle_rotated_box({pA.x, pA.y}, pA.r, {pB.x, pB.y}, {pB.hw * 2.0f, pB.hh * 2.0f}, pB.angle);
     }
     else if (pA.type == 1 && pB.type == 0) { // Box vs Circle
-        result = check_circle_box({pB.x, pB.y}, pB.r, {pA.x, pA.y}, {pA.hw * 2.0f, pA.hh * 2.0f});
+        result = check_circle_rotated_box({pB.x, pB.y}, pB.r, {pA.x, pA.y}, {pA.hw * 2.0f, pA.hh * 2.0f}, pA.angle);
         // Inversion normale car A vs B
         result.normal_vector.x *= -1.0f;
         result.normal_vector.y *= -1.0f;
@@ -181,61 +238,103 @@ void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
     // --- 2. RÉSOLUTION (Ton Algorithme Exact) ---
 
     if (result.is_colliding) {
-        float invMassA = pA.invMass;
-        float invMassB = pB.invMass;
-        float totalMass = invMassA + invMassB;
+        // 1. Vitesse Relative au POINT DE CONTACT (Crucial : Linéaire + Angulaire)
+        // On doit utiliser la vitesse du point précis, sinon le seuil sera faux pour un objet qui tourne.
+        Vect2 rA = { result.contact_point.x - pA.x, result.contact_point.y - pA.y };
+        Vect2 rB = { result.contact_point.x - pB.x, result.contact_point.y - pB.y };
 
-        if (totalMass == 0.0f) return;
+        Vect2 vA_point = { pA.vx - pA.omega * rA.y, pA.vy + pA.omega * rA.x };
+        Vect2 vB_point = { pB.vx - pB.omega * rB.y, pB.vy + pB.omega * rB.x };
 
-        float relVelX = (pA.vx - pB.vx);
-        float relVelY = (pA.vy - pB.vy);
-        float velAlongNormal = relVelX * result.normal_vector.x + relVelY * result.normal_vector.y;
-        
-        if (velAlongNormal > 0) return;
+        float rv_x = vA_point.x - vB_point.x;
+        float rv_y = vA_point.y - vB_point.y;
+        float velAlongNormal = rv_x * result.normal_vector.x + rv_y * result.normal_vector.y;
 
-        bool solved = false;
-        // Calcul du "Temps à rembobiner" pour trouver le moment exact de l'impact
-        float timeToRewind = result.depth / -velAlongNormal;
-        const float EPSILON = 0.001f;
-        
-        if (velAlongNormal < -EPSILON) {
-            float relSpeedSq = relVelX*relVelX + relVelY*relVelY;
-            // Si la vitesse le long de la normale est significative par rapport à la vitesse totale
-            if (velAlongNormal * velAlongNormal > 0.01f * relSpeedSq) {
-                // Clamp timeToRewind pour éviter les bugs si ça explose
-                if (timeToRewind > 0.05f) timeToRewind = 0.05f; 
+        // 2. Accélération Relative (Linéaire suffit ici)
+        // On regarde si les forces (gravité, moteur...) poussent les objets l'un vers l'autre
+        float relAccX = pA.ax - pB.ax;
+        float relAccY = pA.ay - pB.ay;
+        float accAlongNormal = relAccX * result.normal_vector.x + relAccY * result.normal_vector.y;
 
-                // REWIND : On recule les objets dans le temps
-                pA.x -= pA.vx * timeToRewind;
-                pA.y -= pA.vy * timeToRewind;
-                pB.x -= pB.vx * timeToRewind;
-                pB.y -= pB.vy * timeToRewind;
-                solved = true;
+        // 3. Définition du Seuil Dynamique
+        // La vitesse gagnée uniquement grâce aux forces sur cette frame
+        float closingSpeedFromGravity = accAlongNormal * dt;
+
+        // On ajoute une micro marge (k_slop) pour absorber les erreurs flottantes
+        const float k_slop = 0.001f;
+
+        // CONDITION : Est-ce un vrai crash ?
+        // Si on se rapproche plus vite que ce que la gravité seule ferait -> IMPACT
+        bool is_real_impact = velAlongNormal < (closingSpeedFromGravity - k_slop);
+
+        if (is_real_impact) {
+            // === CAS 1 : IMPACT VIOLENT ===
+            // C'est ici qu'on fait le REWIND car la vitesse est significative
+            
+            // Calcul sécurisé du Rewind
+            float timeToRewind = 0.0f;
+            if (velAlongNormal < -0.0001f) {
+                timeToRewind = result.depth / -velAlongNormal;
             }
-        }
+            
+            // Clamp timeToRewind entre 0 et dt (indispensable)
+            if (timeToRewind > dt) timeToRewind = dt;
+            if (timeToRewind < 0.0f) timeToRewind = 0.0f;
 
-        if (!solved) { // Fallback : Projection classique (Si collision statique ou trop lente)
-            float move = result.depth / totalMass;
-            pA.x += result.normal_vector.x * invMassA * move;
-            pA.y += result.normal_vector.y * invMassA * move;
-            pB.x -= result.normal_vector.x * invMassB * move;
-            pB.y -= result.normal_vector.y * invMassB * move;
-        }
+            pA.x -= pA.vx * timeToRewind; pA.y -= pA.vy * timeToRewind; pA.angle -= pA.omega * timeToRewind;
+            pB.x -= pB.vx * timeToRewind; pB.y -= pB.vy * timeToRewind; pB.angle -= pB.omega * timeToRewind;
 
-        // Application de l'impulsion (Rebond)
-        apply_impulse_response(pA, pB, result.normal_vector);
-        
-        // RE-FORWARD : Si on a rembobiné, on ré-avance avec les NOUVELLES vitesses
-        if(solved){
-            pA.x += pA.vx * timeToRewind;
-            pA.y += pA.vy * timeToRewind;
-            pB.x += pB.vx * timeToRewind;
-            pB.y += pB.vy * timeToRewind;
+            // 4. ADAPTATION DU POINT DE CONTACT (Le Fix de l'Energie)
+            // Le point de contact doit aussi reculer, sinon le bras de levier est faux.
+            // On approxime son mouvement par la vitesse du système au point de contact.
+            CollisionResult impactRes = result;
+            impactRes.depth = 0; // À l'impact, depth est nulle
+            
+            // On déplace le point de contact en arrière selon sa propre vitesse
+            // On moyenne les vitesses des deux points pour estimer le déplacement du contact
+            // (Ou on prend vA si B est statique)
+            float vContactX = vA_point.x; // Simplification acceptable
+            float vContactY = vA_point.y;
+            // Si tu veux être précis : vContact = (vA_point * invMA + vB_point * invMB) / (invMA + invMB)
+            
+            impactRes.contact_point.x -= vContactX * timeToRewind;
+            impactRes.contact_point.y -= vContactY * timeToRewind;
+
+            // 5. RESOLUTION
+            apply_impulse_response(pA, pB, impactRes);
+
+            // 6. FORWARD (On avance avec les NOUVELLES vitesses)
+            pA.x += pA.vx * timeToRewind; pA.y += pA.vy * timeToRewind; pA.angle += pA.omega * timeToRewind;
+            pB.x += pB.vx * timeToRewind; pB.y += pB.vy * timeToRewind; pB.angle += pB.omega * timeToRewind;
+        } 
+        else {
+            // === CAS 2 : CONTACT AU REPOS (RESTING) ===
+            // Ici, la vitesse relative est faible (proche de 0 ou causée juste par la gravité).
+            // On ne fait PAS de rewind (trop instable pour de si petites valeurs).
+            
+            // A. On résout l'impulse normalement
+            // Astuce : Pour le resting, on force souvent la restitution (rebond) à 0
+            // pour éviter que les objets ne vibrent sur le sol.
+            CollisionResult restingRes = result;
+            apply_impulse_response(pA, pB, restingRes); 
+
+            // B. On fait juste la projection (Position Correction) pour ne pas s'enfoncer
+            float totalInvMass = pA.invMass + pB.invMass;
+            if (totalInvMass > 0.0f) {
+                float move = result.depth / totalInvMass;
+                // On peut appliquer un "Baumgarte stabilization" ici (corriger seulement 20-50% de l'erreur)
+                // move *= 0.5f; 
+                
+                pA.x += result.normal_vector.x * pA.invMass * move;
+                pA.y += result.normal_vector.y * pA.invMass * move;
+                pB.x -= result.normal_vector.x * pB.invMass * move;
+                pB.y -= result.normal_vector.y * pB.invMass * move;
+            }
         }
     }
 }
 
-void PhysicsSystem::solve_collisions() {
+void PhysicsSystem::solve_collisions(float dt) {
     refresh_grid_from_cache();
     // On itère sur le CACHE linéaire (Ultra rapide)
     for(int i = 0; i < (int)cache.size(); ++i) {
@@ -266,7 +365,7 @@ void PhysicsSystem::solve_collisions() {
                     if (dist_y > rSum) continue;
 
                     // Résolution
-                    resolve_pair(pA, pB);
+                    resolve_pair(pA, pB,dt);
                 }
             }
         }

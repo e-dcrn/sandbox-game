@@ -77,6 +77,8 @@ void handle_debug_input(Game& game, const SDL_Event& event) {
                         .get<Velocity>(iarchive)
                         .get<GravityAffected>(iarchive)
                         .get<Collider>(iarchive)
+                        .get<Rotation>(iarchive)
+                        .get<UseRaycast>(iarchive)
                         .orphans();
 
                     game.m_history.pop_back();
@@ -102,7 +104,9 @@ void take_snapshot(Game& game) {
         .get<ForceAccumulator>(oarchive)
         .get<Velocity>(oarchive)
         .get<GravityAffected>(oarchive)
-        .get<Collider>(oarchive);
+        .get<Collider>(oarchive)
+        .get<Rotation>(oarchive)
+        .get<UseRaycast>(oarchive);
     game.m_history.push_back(storage.str());
     if (game.m_history.size() > Game::MAX_HISTORY_SIZE) {
         game.m_history.pop_front();

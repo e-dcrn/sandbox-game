@@ -11,6 +11,10 @@ struct ParticleCache {
     entt::entity entity;
     float x, y;      // Position
     float vx, vy;    // Velocity
+    float ax, ay;
+    float angle;       // Transféré depuis Rotation
+    float omega;       // Transféré depuis Rotation
+    float invInertia;
     float r;         // Rayon (ou demi-taille)
     float invMass;
     float restitution;
@@ -28,7 +32,7 @@ public:
     void update(entt::registry& registry, float dt);
 
 private:
-    const float CELL_SIZE = 30.0f; // Cellule plus large pour moins de checks
+    const float CELL_SIZE = 1000.0f; // Cellule plus large pour moins de checks
     
     // TABLE DE HACHAGE FIXE (Supporte monde infini par enroulement)
     static const int HASH_SIZE = 4093; 
@@ -42,9 +46,9 @@ private:
 
     ForceRegistry force_registry;
     static float combine_restitution(float rA, float rB);
-    static void apply_impulse_response(ParticleCache& pA, ParticleCache& pB, const Vect2& normal);
-    static void resolve_pair(ParticleCache& pA, ParticleCache& pB);
-    void solve_collisions();
+    static void apply_impulse_response(ParticleCache& pA, ParticleCache& pB,const CollisionResult& res);
+    static void resolve_pair(ParticleCache& pA, ParticleCache& pB, float dt);
+    void solve_collisions(float dt);
     RayHit sweep_static_collisions(entt::registry& registry, 
                                    const Position& pos, 
                                    const Collider& collider, 
