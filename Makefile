@@ -1,28 +1,30 @@
 # --- Configuration du Compilateur ---
 CXX      = g++
-# Drapeaux communs (Warnings + Version C++)
 CXXFLAGS_COMMON = -std=c++17 -Wall -Wextra
 
-# --- Configuration des Modes (Debug vs Release) ---
-# Par défaut, on est en RELEASE (Rapide)
+# --- Configuration des Modes ---
 MODE ?= release
 
 ifeq ($(MAKECMDGOALS),debug)
     MODE = debug
 endif
 
-# Configuration spécifique selon le mode
+# Définition explicite des chemins pour pouvoir nettoyer les deux modes
+BUILD_ROOT    = build
+BUILD_DEBUG   = build/debug
+BUILD_RELEASE = build/release
+BIN_DEBUG     = bin/debug
+BIN_RELEASE   = bin/release
+
 ifeq ($(MODE),debug)
-    # Mode Debug : Symboles (-g), Pas d'opti (-O0)
-    CXXFLAGS = $(CXXFLAGS_COMMON) -g -O0
-    BUILD_DIR = build/debug
-    BIN_DIR   = bin/debug
+    CXXFLAGS  = $(CXXFLAGS_COMMON) -g -O0
+    BUILD_DIR = $(BUILD_DEBUG)
+    BIN_DIR   = $(BIN_DEBUG)
     TARGET_NAME = sandbox_debug
 else
-    # Mode Release : Optimisation Max (-O3), Pas d'asserts (-DNDEBUG)
-    CXXFLAGS = $(CXXFLAGS_COMMON) -O3 -DNDEBUG
-    BUILD_DIR = build/release
-    BIN_DIR   = bin/release
+    CXXFLAGS  = $(CXXFLAGS_COMMON) -O3 -DNDEBUG
+    BUILD_DIR = $(BUILD_RELEASE)
+    BIN_DIR   = $(BIN_RELEASE)
     TARGET_NAME = sandbox_app
 endif
 
@@ -30,76 +32,102 @@ endif
 SRC_DIR  = src
 LIBS_DIR = libs
 
-# --- Chemins des Includes (-I) ---
+# --- Includes ---
 INCLUDES = -I$(SRC_DIR) \
            -I$(LIBS_DIR)/imgui \
            -I$(LIBS_DIR)/imgui/backends \
            -I$(LIBS_DIR)/entt/src \
            $(shell sdl2-config --cflags)
 
-# --- Librairies à lier (-l) ---
+# --- Librairies ---
 LIBS     = $(shell sdl2-config --libs) -ldl -lpthread
 
-# --- Fichiers Sources ---
-# Récupération récursive des .cpp dans src/
-SOURCES  = $(shell find $(SRC_DIR) -name "*.cpp")
+# --- Sources ---
 
-# Ajout manuel des sources ImGui
+# 1. Points d'entrée
+FILE_APP_MAIN  = src/main.cpp
+FILE_TEST_MAIN = src/tests/main_test.cpp
+
+# 2. ImGui
 IMGUI_DIR = $(LIBS_DIR)/imgui
-SOURCES += $(IMGUI_DIR)/imgui.cpp \
-           $(IMGUI_DIR)/imgui_demo.cpp \
-           $(IMGUI_DIR)/imgui_draw.cpp \
-           $(IMGUI_DIR)/imgui_tables.cpp \
-           $(IMGUI_DIR)/imgui_widgets.cpp \
-           $(IMGUI_DIR)/backends/imgui_impl_sdl2.cpp \
-           $(IMGUI_DIR)/backends/imgui_impl_sdlrenderer2.cpp
+IMGUI_SRCS = $(IMGUI_DIR)/imgui.cpp \
+             $(IMGUI_DIR)/imgui_demo.cpp \
+             $(IMGUI_DIR)/imgui_draw.cpp \
+             $(IMGUI_DIR)/imgui_tables.cpp \
+             $(IMGUI_DIR)/imgui_widgets.cpp \
+             $(IMGUI_DIR)/backends/imgui_impl_sdl2.cpp \
+             $(IMGUI_DIR)/backends/imgui_impl_sdlrenderer2.cpp
+
+# 3. Moteur (Tout src/ sauf les main)
+ALL_SRC_FILES := $(shell find $(SRC_DIR) -name "*.cpp")
+CORE_SRCS := $(filter-out $(FILE_APP_MAIN) $(FILE_TEST_MAIN), $(ALL_SRC_FILES))
 
 # --- Objets ---
-# On transforme les .cpp en .o et on les place dans le dossier de build spécifique
-# Ex: src/main.cpp -> build/release/src/main.o
-OBJECTS = $(SOURCES:%.cpp=$(BUILD_DIR)/%.o)
+# Note: $(BUILD_DIR)/src/... contiendra ton code
+#       $(BUILD_DIR)/libs/... contiendra imgui
+APP_OBJS  = $(CORE_SRCS:%.cpp=$(BUILD_DIR)/%.o) \
+            $(IMGUI_SRCS:%.cpp=$(BUILD_DIR)/%.o) \
+            $(FILE_APP_MAIN:%.cpp=$(BUILD_DIR)/%.o)
 
-# --- Cible Finale ---
-TARGET  = $(BIN_DIR)/$(TARGET_NAME)
+TEST_OBJS = $(CORE_SRCS:%.cpp=$(BUILD_DIR)/%.o) \
+            $(IMGUI_SRCS:%.cpp=$(BUILD_DIR)/%.o) \
+            $(FILE_TEST_MAIN:%.cpp=$(BUILD_DIR)/%.o)
 
-# --- Règles ---
+# --- Cibles ---
+TARGET_APP  = $(BIN_DIR)/$(TARGET_NAME)
+TARGET_TEST = $(BIN_DIR)/test_physics
 
-# Règle par défaut (lance la compilation release)
-all: $(TARGET)
+# --- Règles de Compilation ---
 
-# Règle pour l'exécutable
-$(TARGET): $(OBJECTS)
+all: $(TARGET_APP)
+
+$(TARGET_APP): $(APP_OBJS)
 	@mkdir -p $(dir $@)
-	$(CXX) $(OBJECTS) -o $(TARGET) $(LIBS)
-	@echo "✅ Build [$(MODE)] réussi ! Exécutable : $(TARGET)"
+	$(CXX) $(APP_OBJS) -o $(TARGET_APP) $(LIBS)
+	@echo "✅ Build App [$(MODE)] terminé -> $(TARGET_APP)"
 
-# Règle générique pour compiler les .cpp en .o
-# Le @mkdir -p $(dir $@) crée automatiquement les sous-dossiers (src, libs, etc.) dans build/
+$(TARGET_TEST): $(TEST_OBJS)
+	@mkdir -p $(dir $@)
+	$(CXX) $(TEST_OBJS) -o $(TARGET_TEST) $(LIBS)
+	@echo "✅ Build Tests [$(MODE)] terminé -> $(TARGET_TEST)"
+
 $(BUILD_DIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
 # --- Commandes Utilisateur ---
 
-# 1. Commande "make run" (Compile en Release et lance)
-run: $(TARGET)
-	@echo "🚀 Lancement en mode RELEASE..."
-	./$(TARGET)
+run: $(TARGET_APP)
+	@echo "🚀 Lancement..."
+	./$(TARGET_APP)
 
-# 2. Commande "make debug" (Compile en Debug)
-# On force la dépendance vers l'exécutable debug
-debug: $(TARGET)
-	@echo "🐞 Build DEBUG terminé."
+test: $(TARGET_TEST)
+	@echo "🧪 Tests..."
+	./$(TARGET_TEST)
 
-# 3. Commande "make gdb" (Compile en Debug et lance GDB)
+debug: $(TARGET_APP)
+
 gdb: debug
-	gdb ./$(TARGET)
+	gdb ./$(TARGET_APP)
 
-# Nettoyage complet
-clean:
+# --- Règles de Nettoyage (Ta demande spécifique) ---
+
+# 1. Clean uniquement le CODE (src) du mode Debug. Garde les libs compilées.
+clean_debug:
+	rm -rf $(BIN_DEBUG)
+	rm -rf $(BUILD_DEBUG)/src
+	@echo "🧹 Debug Code cleaned (Libs kept)."
+
+# 2. Clean uniquement le CODE (src) du mode Release. Garde les libs compilées.
+clean_release:
+	rm -rf $(BIN_RELEASE)
+	rm -rf $(BUILD_RELEASE)/src
+	@echo "🧹 Release Code cleaned (Libs kept)."
+
+# 3. Supprime TOUT (Build + Bin). Force la recompilation des libs (ImGui, etc.)
+clean_all:
 	rm -rf build
 	rm -rf bin
-	@echo "🧹 Nettoyage effectué."
+	@echo "💥 Full Clean Done (Everything deleted)."
 
-# Pour éviter les conflits avec des fichiers du même nom
-.PHONY: all clean run debug gdb
+.PHONY: all clean_debug clean_release clean_all clean_legacy run test debug gdb
