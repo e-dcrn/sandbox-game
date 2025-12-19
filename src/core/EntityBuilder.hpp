@@ -31,6 +31,11 @@ public:
         return *this;
     }
 
+    EntityBuilder& withAngle(float degrees) {
+        radians = degrees * (3.14159f / 180.0f);
+        return *this;
+    }
+
     EntityBuilder& withVelocity(float vx, float vy) {
         m_vx = vx;
         m_vy = vy;
@@ -96,12 +101,9 @@ public:
         auto entity = m_registry.create();
 
         // 1. Position & Vélocité
-        m_registry.emplace<Position>(entity, m_x, m_y);
-        m_registry.emplace<Velocity>(entity, m_vx, m_vy);
+        m_registry.emplace<Position>(entity, m_x, m_y, radians);
+        m_registry.emplace<Velocity>(entity, m_vx, m_vy, m_omega);
         
-        // 2. Rotation (Indispensable pour le moteur physique)
-        // m_registry.emplace<Rotation>(entity, 0.0f, m_omega);
-
         // 3. Force Accumulator (Indispensable)
         m_registry.emplace<ForceAccumulator>(entity, 0.0f, 0.0f/*, 0.0f*/);
 
@@ -119,23 +121,23 @@ public:
             }
         }
 
-        // // 5. RigidBody (Calculs automatiques)
-        // float inertia = 0.0f;
+        // 5. RigidBody (Calculs automatiques)
+        float inertia = 0.0f;
         
-        // // Calcul de l'inertie basé sur la géométrie et la "Masse d'Inertie"
-        // if (m_inertiaMass > 0.0f) {
-        //     if (m_type == ShapeType::CIRCLE) {
-        //         inertia = 0.5f * m_inertiaMass * m_radius * m_radius;
-        //     } else if (m_type == ShapeType::BOX) {
-        //         inertia = (1.0f / 12.0f) * m_inertiaMass * (m_width * m_width + m_height * m_height);
-        //     }
-        // }
+        // Calcul de l'inertie basé sur la géométrie et la "Masse d'Inertie"
+        if (m_inertiaMass > 0.0f) {
+            if (m_type == ShapeType::CIRCLE) {
+                inertia = 0.5f * m_inertiaMass * m_radius * m_radius;
+            } else if (m_type == ShapeType::BOX) {
+                inertia = (1.0f / 12.0f) * m_inertiaMass * (m_width * m_width + m_height * m_height);
+            }
+        }
 
         float invMass = (m_mass > 0.0f) ? 1.0f / m_mass : 0.0f;
-        // float invInertia = (inertia > 0.0f) ? 1.0f / inertia : 0.0f;
+        float invInertia = (inertia > 0.0f) ? 1.0f / inertia : 0.0f;
 
         // Note: On pourrait ajouter m_friction dans RigidBody plus tard
-        m_registry.emplace<RigidBody>(entity, m_mass, invMass, m_restitution/*, inertia, invInertia*/);
+        m_registry.emplace<RigidBody>(entity, m_mass, invMass, m_restitution, inertia, invInertia);
 
         // 6. Flags
         if (m_hasGravity) {
@@ -154,7 +156,7 @@ private:
     // Default values
     enum class ShapeType { NONE, CIRCLE, BOX } m_type = ShapeType::NONE;
     float m_x = 0, m_y = 0;
-    float m_vx = 0, m_vy = 0;
+    float m_vx = 0, m_vy = 0, radians = 0;
     float m_radius = 10.0f;
     float m_width = 10.0f, m_height = 10.0f;
     float m_omega = 0.0f;

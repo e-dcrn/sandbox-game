@@ -123,6 +123,9 @@ Sans friction, une balle qui touche le sol ne "roulera" pas vraiment, elle gliss
 3. Limiter cette impulsion de friction par la loi de Coulomb :
    $$Friction \le ImpulsionNormale \times CoeffFriction$$
 4. Ne pas oublier de mettre à jours l'énergie mécanique dans le mode debug
+5. Ajouter '''// Rayon effectif pour le broadphase (Diagonale pour les boites)
+        float r = (type == 0) ? col.radius : std::sqrt(hw*hw + hh*hh); ''' dans la structure des colision
+6. Réparer le RayCast
 
 ---
 

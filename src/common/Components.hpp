@@ -5,11 +5,13 @@
 struct Position {
     float x;
     float y;
+    float teta;
 };
 
 struct Velocity {
     float x;
     float y;
+    float w;
 };
 
 struct ForceAccumulator {
@@ -21,6 +23,8 @@ struct RigidBody {
     float mass;
     float inverseMass;
     float restitution;
+    float inertia;
+    float inverseInertia;
 };
 
 struct GravityAffected {

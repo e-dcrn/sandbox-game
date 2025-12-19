@@ -1,6 +1,11 @@
 #include "PhysicsSystem.hpp"
 #include "forces/Gravity.hpp"
 
+constexpr int PHYSICS_SUB_STEPS = 1;
+constexpr float REWIND_THRESHOLD_SQ = 0.01f;
+constexpr float MAX_REWIND_TIME = 0.05f;
+constexpr float EPSILON = 0.001f;
+
 void PhysicsSystem::init() {
     force_registry.add([](entt::registry& r, float /*dt*/) { 
         Forces::apply_gravity(r, 980.0f); 
@@ -13,10 +18,9 @@ void PhysicsSystem::init() {
 
 void PhysicsSystem::update(entt::registry& registry, float dt) {
 
-    const int sub_steps = 1;
-    float sub_dt = dt / sub_steps;
+    float sub_dt = dt / PHYSICS_SUB_STEPS;
 
-    for(int i = 0; i < sub_steps; ++i){
+    for(int i = 0; i < PHYSICS_SUB_STEPS; ++i){
         registry.view<ForceAccumulator>().each([](auto& force) {
             force.x = 0; force.y = 0;
         });
@@ -159,9 +163,6 @@ void PhysicsSystem::apply_impulse_response(ParticleCache& pA, ParticleCache& pB,
 void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
     CollisionResult result = {false, {0,0}, 0};
 
-    // --- 1. DÉTECTION (Adaptation des données Cache vers tes fonctions de check) ---
-    // Note : p.hw et p.hh sont les demi-largeurs, tes fonctions attendent souvent width/height (x2)
-    
     if (pA.type == 0 && pB.type == 0) { // Circle vs Circle
         result = check_circle_circle({pA.x, pA.y}, pA.r, {pB.x, pB.y}, pB.r);
     }
@@ -178,8 +179,6 @@ void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
         result = check_box_box({pA.x, pA.y}, {pA.hw * 2.0f, pA.hh * 2.0f}, {pB.x, pB.y}, {pB.hw * 2.0f, pB.hh * 2.0f});
     }
 
-    // --- 2. RÉSOLUTION (Ton Algorithme Exact) ---
-
     if (result.is_colliding) {
         float invMassA = pA.invMass;
         float invMassB = pB.invMass;
@@ -193,44 +192,34 @@ void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
         
         if (velAlongNormal > 0) return;
 
-        bool solved = false;
-        // Calcul du "Temps à rembobiner" pour trouver le moment exact de l'impact
-        float timeToRewind = result.depth / -velAlongNormal;
-        const float EPSILON = 0.001f;
-        
-        if (velAlongNormal < -EPSILON) {
-            float relSpeedSq = relVelX*relVelX + relVelY*relVelY;
-            // Si la vitesse le long de la normale est significative par rapport à la vitesse totale
-            if (velAlongNormal * velAlongNormal > 0.01f * relSpeedSq) {
-                // Clamp timeToRewind pour éviter les bugs si ça explose
-                if (timeToRewind > 0.05f) timeToRewind = 0.05f; 
+        float relSpeedSq = relVelX * relVelX + relVelY * relVelY;
+        bool can_rewind = (velAlongNormal < -EPSILON) && 
+                        (velAlongNormal * velAlongNormal > REWIND_THRESHOLD_SQ * relSpeedSq);
 
-                // REWIND : On recule les objets dans le temps
-                pA.x -= pA.vx * timeToRewind;
-                pA.y -= pA.vy * timeToRewind;
-                pB.x -= pB.vx * timeToRewind;
-                pB.y -= pB.vy * timeToRewind;
-                solved = true;
-            }
-        }
+        if (can_rewind) {
+            float timeToRewind = result.depth / -velAlongNormal;
+            if (timeToRewind > MAX_REWIND_TIME) timeToRewind = MAX_REWIND_TIME; 
 
-        if (!solved) { // Fallback : Projection classique (Si collision statique ou trop lente)
+            pA.x -= pA.vx * timeToRewind;
+            pA.y -= pA.vy * timeToRewind;
+            pB.x -= pB.vx * timeToRewind;
+            pB.y -= pB.vy * timeToRewind;
+
+            apply_impulse_response(pA, pB, result.normal_vector);
+
+            pA.x += pA.vx * timeToRewind;
+            pA.y += pA.vy * timeToRewind;
+            pB.x += pB.vx * timeToRewind;
+            pB.y += pB.vy * timeToRewind;
+        } 
+        else {
             float move = result.depth / totalMass;
             pA.x -= result.normal_vector.x * invMassA * move;
             pA.y -= result.normal_vector.y * invMassA * move;
             pB.x += result.normal_vector.x * invMassB * move;
             pB.y += result.normal_vector.y * invMassB * move;
-        }
 
-        // Application de l'impulsion (Rebond)
-        apply_impulse_response(pA, pB, result.normal_vector);
-        
-        // RE-FORWARD : Si on a rembobiné, on ré-avance avec les NOUVELLES vitesses
-        if(solved){
-            pA.x += pA.vx * timeToRewind;
-            pA.y += pA.vy * timeToRewind;
-            pB.x += pB.vx * timeToRewind;
-            pB.y += pB.vy * timeToRewind;
+            apply_impulse_response(pA, pB, result.normal_vector);
         }
     }
 }
@@ -318,21 +307,27 @@ RayHit PhysicsSystem::sweep_static_collisions(entt::registry& registry,
 
 void PhysicsSystem::apply_continuous_movement(Position& pos, Velocity& vel, const RigidBody& body,
                                               const RayHit& hit, float dx, float dy, float dt) {
-    if (hit.hit) {
-        float safe_t = std::max(0.0f, hit.t - 0.001f);
-        pos.x += dx * safe_t;
-        pos.y += dy * safe_t;
-        
-        // Calcul manuel de la réponse impulsionnelle pour le CCD
-        float dot = vel.x * hit.normal.x + vel.y * hit.normal.y;
-        float j = -(1.0f + body.restitution * 0.5f) * dot; // Rebond contre mur statique
-        
-        vel.x += j * hit.normal.x;
-        vel.y += j * hit.normal.y;
+    if (!hit.hit) {
+        pos.x += dx; 
+        pos.y += dy;
+        return;
+    }
 
-        float rem = 1.0f - hit.t;
-        if (rem > 0) { pos.x += vel.x * dt * rem; pos.y += vel.y * dt * rem; }
-    } else {
-        pos.x += dx; pos.y += dy;
+    float safe_t = std::max(0.0f, hit.t - 0.001f);
+    pos.x += dx * safe_t;
+    pos.y += dy * safe_t;
+    
+    float dot = vel.x * hit.normal.x + vel.y * hit.normal.y;
+    
+    float restitution_factor = 1.0f + body.restitution * 0.5f;
+    float j = -restitution_factor * dot; 
+    
+    vel.x += j * hit.normal.x;
+    vel.y += j * hit.normal.y;
+
+    float rem = 1.0f - hit.t;
+    if (rem > 0) { 
+        pos.x += vel.x * dt * rem; 
+        pos.y += vel.y * dt * rem; 
     }
 }
