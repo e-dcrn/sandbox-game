@@ -134,8 +134,8 @@ float PhysicsSystem::combine_restitution(float rA, float rB) {
 
 // Cette fonction ne touche PAS aux positions (pos.x), seulement aux vitesses (vel.x)
 void PhysicsSystem::apply_impulse_response(ParticleCache& pA, ParticleCache& pB, const Vect2& normal) {
-    float relVelX = pA.vx - pB.vx;
-    float relVelY = pA.vy - pB.vy;
+    float relVelX = pB.vx - pA.vx;
+    float relVelY = pB.vy - pA.vy;
     float velAlongNormal = relVelX * normal.x + relVelY * normal.y;
 
     if (velAlongNormal > 0) return;
@@ -150,10 +150,10 @@ void PhysicsSystem::apply_impulse_response(ParticleCache& pA, ParticleCache& pB,
     float impX = normal.x * j;
     float impY = normal.y * j;
 
-    pA.vx += impX * pA.invMass;
-    pA.vy += impY * pA.invMass;
-    pB.vx -= impX * pB.invMass;
-    pB.vy -= impY * pB.invMass;
+    pA.vx -= impX * pA.invMass;
+    pA.vy -= impY * pA.invMass;
+    pB.vx += impX * pB.invMass;
+    pB.vy += impY * pB.invMass;
 }
 
 void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
@@ -167,12 +167,12 @@ void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
     }
     else if (pA.type == 0 && pB.type == 1) { // Circle vs Box
         result = check_circle_box({pA.x, pA.y}, pA.r, {pB.x, pB.y}, {pB.hw * 2.0f, pB.hh * 2.0f});
-    }
-    else if (pA.type == 1 && pB.type == 0) { // Box vs Circle
-        result = check_circle_box({pB.x, pB.y}, pB.r, {pA.x, pA.y}, {pA.hw * 2.0f, pA.hh * 2.0f});
         // Inversion normale car A vs B
         result.normal_vector.x *= -1.0f;
         result.normal_vector.y *= -1.0f;
+    }
+    else if (pA.type == 1 && pB.type == 0) { // Box vs Circle
+        result = check_circle_box({pB.x, pB.y}, pB.r, {pA.x, pA.y}, {pA.hw * 2.0f, pA.hh * 2.0f});
     }
     else { // Box vs Box
         result = check_box_box({pA.x, pA.y}, {pA.hw * 2.0f, pA.hh * 2.0f}, {pB.x, pB.y}, {pB.hw * 2.0f, pB.hh * 2.0f});
@@ -187,8 +187,8 @@ void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
 
         if (totalMass == 0.0f) return;
 
-        float relVelX = (pA.vx - pB.vx);
-        float relVelY = (pA.vy - pB.vy);
+        float relVelX = (pB.vx - pA.vx);
+        float relVelY = (pB.vy - pA.vy);
         float velAlongNormal = relVelX * result.normal_vector.x + relVelY * result.normal_vector.y;
         
         if (velAlongNormal > 0) return;
@@ -216,10 +216,10 @@ void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
 
         if (!solved) { // Fallback : Projection classique (Si collision statique ou trop lente)
             float move = result.depth / totalMass;
-            pA.x += result.normal_vector.x * invMassA * move;
-            pA.y += result.normal_vector.y * invMassA * move;
-            pB.x -= result.normal_vector.x * invMassB * move;
-            pB.y -= result.normal_vector.y * invMassB * move;
+            pA.x -= result.normal_vector.x * invMassA * move;
+            pA.y -= result.normal_vector.y * invMassA * move;
+            pB.x += result.normal_vector.x * invMassB * move;
+            pB.y += result.normal_vector.y * invMassB * move;
         }
 
         // Application de l'impulsion (Rebond)

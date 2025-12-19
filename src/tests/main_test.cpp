@@ -244,6 +244,9 @@ void Test_Maths_Circle_Box() {
         ExpectTrue(IsClose(res.depth, 2.0f), "[Math] Face Y Depth");
         // Normale : Doit repousser vers le haut (0, 1)
         ExpectTrue(IsVecClose(res.normal_vector, {0.0f, 1.0f}), "[Math] Face Y Normal");
+
+        std::cout << "    -> Corner Vel Result: " << res.normal_vector.x << ", " << res.normal_vector.y << std::endl;
+
     }
 
     // -------------------------------------------------------------------------
@@ -270,6 +273,9 @@ void Test_Maths_Circle_Box() {
         // Vérifie que la normale est diagonale (ni purement X, ni purement Y)
         bool isDiagonal = (res.normal_vector.x > 0.1f) && (res.normal_vector.y > 0.1f);
         ExpectTrue(isDiagonal, "[Math] Corner Normal is Diagonal");
+
+        std::cout << "    -> Corner Vel Result: " << res.normal_vector.x << ", " << res.normal_vector.y << std::endl;
+
     }
 
     // -------------------------------------------------------------------------
@@ -697,14 +703,14 @@ void Test_System_Circle_vs_Box() {
 
         // PhysicsSystem applique une impulsion ou modifie la position pour résoudre.
         // Si c'est une résolution par impulsion, la vitesse doit devenir positive (vers la droite).
-        const auto& vBall = registry.get<Velocity>(ball);
+        const auto& posBall = registry.get<Position>(ball);
         
         // Note : Selon ton implémentation (déplacement direct vs vélocité),
         // soit la position a changé, soit la vélocité a changé.
         // Ici on teste la réponse physique standard (rebond/éjection).
         
         // Si ton moteur gère le "depenetration" via la vélocité :
-        ExpectTrue(vBall.x > 0, "[3] Inside: Ejected towards nearest edge (Right)");
+        ExpectTrue(posBall.x > 8.0f, "[3] Inside: Position ejected towards nearest edge (Right)");
     }
 }
 

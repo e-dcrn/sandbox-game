@@ -21,8 +21,8 @@ struct RayHit {
 };
 
 inline CollisionResult check_circle_circle(Vect2 centerA, float radiusA, Vect2 centerB, float radiusB) {
-    float distX = centerA.x - centerB.x;
-    float distY = centerA.y - centerB.y;
+    float distX = centerB.x - centerA.x;
+    float distY = centerB.y - centerA.y;
     float required_distance = radiusA + radiusB;
     
     float square_dist = (distX * distX) + (distY * distY);
@@ -110,13 +110,13 @@ inline CollisionResult check_box_box(Vect2 centerA, Vect2 dimA, Vect2 centerB, V
         if (overlapX < overlapY) {
             return {
                 true,
-                { (deltaX < 0) ? 1.0f : -1.0f, 0.0f },
+                { (deltaX < 0) ? -1.0f : 1.0f, 0.0f },
                 overlapX
             };
         } else {
             return {
                 true,
-                { 0.0f, (deltaY < 0) ? 1.0f : -1.0f },
+                { 0.0f, (deltaY < 0) ? -1.0f : 1.0f },
                 overlapY
             };
         }
