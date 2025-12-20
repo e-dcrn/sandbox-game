@@ -10,11 +10,11 @@ namespace Factory {
 
     inline entt::entity create_ball(entt::registry& registry, float x, float y) {
         return EntityBuilder(registry)
-            .asCircle(3.0f)
+            .asCircle(15.0f)
             .at(x, y)
             .withColor(255, 0, 0)
             .withMass(1.0f)          // Masse 1kg -> Inertie calculée auto
-            .withPhysicsMaterial(0.9f) // Ça rebondit bien
+            .withPhysicsMaterial(1.0f) // Ça rebondit bien
             .withCollider()
             .withGravity()
             .build();
@@ -42,5 +42,18 @@ namespace Factory {
 
             create_ball(registry, randX, randY);
         }
+    }
+
+    inline entt::entity create_spinner(entt::registry& registry, float x, float y, float w, float h, float speed_deg_per_sec) {
+        return EntityBuilder(registry)
+            .asBox(w, h)
+            .at(x, y)
+            .withColor(0, 255, 255)
+            .withAngularVelocity(speed_deg_per_sec)
+            .withMass(0.0f)
+            .withInertiaMass(10.0f)  
+            .withPhysicsMaterial(1.0f)
+            .withCollider()
+            .build();
     }
 }

@@ -12,6 +12,7 @@ struct CollisionResult {
     bool is_colliding;
     Vect2 normal_vector;
     float depth;
+    Vect2 contact_point;
 };
 
 struct RayHit {
@@ -30,18 +31,27 @@ inline CollisionResult check_circle_circle(Vect2 centerA, float radiusA, Vect2 c
     
     if (square_dist < required_square) {
         float dist = std::sqrt(square_dist);
+        Vect2 normal;
+
         if (dist == 0.0f) {
-            return { true, {0.0f, 1.0f}, required_distance}; 
+            normal = {0.0f, 1.0f};
+            return { true, normal, required_distance, {centerA.x, centerA.y + radiusA}}; 
         }
         float inverse_dist = 1.0f / dist;
+        normal = {distX * inverse_dist, distY * inverse_dist};
+        Vect2 contact = {
+            centerA.x + normal.x * radiusA,
+            centerA.y + normal.y * radiusA
+        };
 
         return {
             true,
-            {distX * inverse_dist, distY * inverse_dist},
-            required_distance - dist 
+            normal,
+            required_distance - dist,
+            contact
         };
     }
-    return {false, {0.0f, 0.0f}, 0.0f};
+    return {false, {0.0f, 0.0f}, 0.0f, {0.0f, 0.0f}};
 }
 
 inline CollisionResult check_circle_box(Vect2 circle_center, float circle_radius, Vect2 box_center, Vect2 box_dimensions) {
@@ -61,25 +71,32 @@ inline CollisionResult check_circle_box(Vect2 circle_center, float circle_radius
 
         Vect2 normal;
         float depth;
+        Vect2 contact;
 
         if (distToEdgeX < distToEdgeY) {
+            float sign = (dx > 0) ? 1.0f : -1.0f;
             normal = { (dx > 0) ? 1.0f : -1.0f, 0.0f };
             depth = distToEdgeX + circle_radius;
+            contact = { box_center.x + (halfW * sign), box_center.y + dy };
         } 
         else {
+            float sign = (dy > 0) ? 1.0f : -1.0f;
             normal = { 0.0f, (dy > 0) ? 1.0f : -1.0f };
             depth = distToEdgeY + circle_radius;
+            contact = { box_center.x + dx, box_center.y + (halfH * sign) };
         }
 
-        return { true, normal, depth };
+        return { true, normal, depth, contact};
     }
     else {
+        Vect2 contact = { box_center.x + closestX, box_center.y + closestY };
+
         float diffX = dx - closestX;
         float diffY = dy - closestY;
         float distSq = diffX * diffX + diffY * diffY;
 
         if (distSq > circle_radius * circle_radius) {
-            return {false, {0.0f, 0.0f}, 0.0f};
+            return {false, {0.0f, 0.0f}, 0.0f, {0.0f, 0.0f}};
         }
 
         float dist = std::sqrt(distSq);
@@ -91,7 +108,7 @@ inline CollisionResult check_circle_box(Vect2 circle_center, float circle_radius
             normal = { diffX / dist, diffY / dist };
         }
 
-        return { true, normal, circle_radius - dist };
+        return { true, normal, circle_radius - dist, contact};
     }
 }
 
@@ -107,21 +124,43 @@ inline CollisionResult check_box_box(Vect2 centerA, Vect2 dimA, Vect2 centerB, V
     float overlapY = halfH_A + halfH_B - std::abs(deltaY);
 
     if (overlapX > 0 && overlapY > 0) {
+        float minXA = centerA.x - halfW_A;
+        float maxXA = centerA.x + halfW_A;
+        float minXB = centerB.x - halfW_B;
+        float maxXB = centerB.x + halfW_B;
+
+        float minYA = centerA.y - halfH_A;
+        float maxYA = centerA.y + halfH_A;
+        float minYB = centerB.y - halfH_B;
+        float maxYB = centerB.y + halfH_B;
+
+        float intersectMinX = std::max(minXA, minXB);
+        float intersectMaxX = std::min(maxXA, maxXB);
+        float intersectMinY = std::max(minYA, minYB);
+        float intersectMaxY = std::min(maxYA, maxYB);
+
+        Vect2 contact = {
+            (intersectMinX + intersectMaxX) * 0.5f,
+            (intersectMinY + intersectMaxY) * 0.5f
+        };
+
         if (overlapX < overlapY) {
             return {
                 true,
                 { (deltaX < 0) ? -1.0f : 1.0f, 0.0f },
-                overlapX
+                overlapX,
+                contact
             };
         } else {
             return {
                 true,
                 { 0.0f, (deltaY < 0) ? -1.0f : 1.0f },
-                overlapY
+                overlapY,
+                contact
             };
         }
     }
-    return {false, {0.0f, 0.0f}, 0.0f};
+    return {false, {0.0f, 0.0f}, 0.0f, {0.0f, 0.0f}};
 }
 
 inline RayHit ray_vs_aabb(float ox, float oy, float dx, float dy, 

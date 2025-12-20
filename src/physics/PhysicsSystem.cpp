@@ -29,12 +29,13 @@ void PhysicsSystem::update(entt::registry& registry, float dt) {
 
         auto view = registry.view<RigidBody, Position, Velocity, Collider, ForceAccumulator>();
         view.each([&registry, sub_dt, this](auto entity, const auto& body, auto& pos, auto& vel, const auto& col, const auto& forces) {
-            if (body.inverseMass == 0) return;
-
+            if (body.inverseMass == 0 && body.inverseInertia == 0 && vel.w == 0 && vel.x == 0 && vel.y == 0) return;
+            
             float acc_x = forces.x * body.inverseMass;
             float acc_y = forces.y * body.inverseMass;
             vel.x += acc_x * sub_dt;
             vel.y += acc_y * sub_dt;
+            pos.teta += vel.w * sub_dt;
             float dx = vel.x * sub_dt;
             float dy = vel.y * sub_dt;
 
@@ -161,7 +162,7 @@ void PhysicsSystem::apply_impulse_response(ParticleCache& pA, ParticleCache& pB,
 }
 
 void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
-    CollisionResult result = {false, {0,0}, 0};
+    CollisionResult result = {false, {0,0}, 0, {0,0}};
 
     if (pA.type == 0 && pB.type == 0) { // Circle vs Circle
         result = check_circle_circle({pA.x, pA.y}, pA.r, {pB.x, pB.y}, pB.r);

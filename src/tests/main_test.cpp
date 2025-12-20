@@ -356,8 +356,8 @@ void Test_System_Circle_vs_Circle() {
             .withCollider().build();
 
         // On FORCE le chevauchement (Overlap de 2 pixels)
-        registry.replace<Position>(e1, Position{-9.0f, 0.0f});
-        registry.replace<Position>(e2, Position{ 9.0f, 0.0f});
+        registry.replace<Position>(e1, Position{-9.0f, 0.0f,0.0f});
+        registry.replace<Position>(e2, Position{ 9.0f, 0.0f,0.0f});
 
         physics.update(registry, 0.016f);
 
@@ -391,8 +391,8 @@ void Test_System_Circle_vs_Circle() {
             .withVelocity(0, -10).withMass(1.0f).withCollider().build();
 
         // Force Overlap Y
-        registry.replace<Position>(top, Position{0.0f, -9.0f});
-        registry.replace<Position>(bot, Position{0.0f,  9.0f});
+        registry.replace<Position>(top, Position{0.0f, -9.0f, 0.0f});
+        registry.replace<Position>(bot, Position{0.0f,  9.0f, 0.0f});
 
         physics.update(registry, 0.016f);
 
@@ -426,8 +426,8 @@ void Test_System_Circle_vs_Circle() {
             .withCollider().build();
 
         // Force Overlap
-        registry.replace<Position>(heavy, Position{-9.0f, 0.0f});
-        registry.replace<Position>(light, Position{ 9.0f, 0.0f});
+        registry.replace<Position>(heavy, Position{-9.0f, 0.0f, 0.0f});
+        registry.replace<Position>(light, Position{ 9.0f, 0.0f, 0.0f});
 
         physics.update(registry, 0.016f);
 
@@ -466,8 +466,8 @@ void Test_System_Box_vs_Box() {
             .withVelocity(-10, 0).withMass(1.0f).withPhysicsMaterial(1.0f).withCollider().build();
 
         // Force Overlap X (2 pixels)
-        registry.replace<Position>(e1, Position{-9.0f, 0.0f});
-        registry.replace<Position>(e2, Position{ 9.0f, 0.0f});
+        registry.replace<Position>(e1, Position{-9.0f, 0.0f, 0.0f});
+        registry.replace<Position>(e2, Position{ 9.0f, 0.0f, 0.0f});
 
         physics.update(registry, 0.016f);
 
@@ -494,8 +494,8 @@ void Test_System_Box_vs_Box() {
             .withVelocity(0, -10).withMass(1.0f).withPhysicsMaterial(1.0f).withCollider().build();
 
         // Force Overlap Y (2 pixels)
-        registry.replace<Position>(top, Position{0.0f, -9.0f});
-        registry.replace<Position>(bot, Position{0.0f,  9.0f});
+        registry.replace<Position>(top, Position{0.0f, -9.0f, 0.0f});
+        registry.replace<Position>(bot, Position{0.0f,  9.0f, 0.0f});
 
         physics.update(registry, 0.016f);
 
@@ -529,7 +529,7 @@ void Test_System_Box_vs_Box() {
         // Force Overlap (La boite rentre dans le mur)
         // Mur à x=20 (bord gauche à 10). Boite largeur 20 (bord droit à x+10).
         // Si boite à x=2, bord droit à 12. Overlap de 2 pixels.
-        registry.replace<Position>(box, Position{2.0f, 0.0f});
+        registry.replace<Position>(box, Position{2.0f, 0.0f, 0.0f});
 
         physics.update(registry, 0.016f);
 
@@ -610,7 +610,7 @@ void Test_System_Circle_vs_Box() {
 
         // Force Overlap : Balle à x=4. Bord mur à x=5. Rayon 2.
         // La balle pénètre de 1 pixel.
-        registry.replace<Position>(ball, Position{4.0f, 0.0f});
+        registry.replace<Position>(ball, Position{4.0f, 0.0f, 0.0f});
 
         physics.update(registry, 0.016f);
 
@@ -655,7 +655,7 @@ void Test_System_Circle_vs_Box() {
             .withCollider().build();
 
         // Force Position proche du coin
-        registry.replace<Position>(ball, Position{12.5f, 13.5f});
+        registry.replace<Position>(ball, Position{12.5f, 13.5f, 0.0f});
 
         physics.update(registry, 0.016f);
 
