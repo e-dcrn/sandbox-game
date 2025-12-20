@@ -29,13 +29,13 @@ void PhysicsSystem::update(entt::registry& registry, float dt) {
 
         auto view = registry.view<RigidBody, Position, Velocity, Collider, ForceAccumulator>();
         view.each([&registry, sub_dt, this](auto entity, const auto& body, auto& pos, auto& vel, const auto& col, const auto& forces) {
-            if (body.inverseMass == 0 && body.inverseInertia == 0 && vel.w == 0 && vel.x == 0 && vel.y == 0) return;
+            if (body.inverseMass == 0 && body.inverseInertia == 0 && vel.omega == 0 && vel.x == 0 && vel.y == 0) return;
             
             float acc_x = forces.x * body.inverseMass;
             float acc_y = forces.y * body.inverseMass;
             vel.x += acc_x * sub_dt;
             vel.y += acc_y * sub_dt;
-            pos.teta += vel.w * sub_dt;
+            pos.theta += vel.omega * sub_dt;
             float dx = vel.x * sub_dt;
             float dy = vel.y * sub_dt;
 
@@ -71,7 +71,7 @@ void PhysicsSystem::build_cache_from_registry(entt::registry& registry) {
     auto view = registry.view<Position, Collider>();
     
     view.each([this, &registry](auto entity, const auto& pos, const auto& col) {
-        float vx = 0, vy = 0, invMass = 0, restitution = 1.0f;
+        float vx = 0, vy = 0, omega = 0, invMass = 0, restitution = 1.0f;
 
         if (registry.all_of<RigidBody>(entity)) {
             const auto& body = registry.get<RigidBody>(entity);
@@ -80,7 +80,7 @@ void PhysicsSystem::build_cache_from_registry(entt::registry& registry) {
         }
         if (registry.all_of<Velocity>(entity)) {
             const auto& vel = registry.get<Velocity>(entity);
-            vx = vel.x; vy = vel.y;
+            vx = vel.x; vy = vel.y; omega = vel.omega;
         }
 
         int type = (col.type == ColliderType::CIRCLE) ? 0 : 1;
@@ -91,7 +91,7 @@ void PhysicsSystem::build_cache_from_registry(entt::registry& registry) {
         float r = (type == 0) ? col.radius : std::sqrt(hw*hw + hh*hh); 
 
         // On remplit le cache
-        cache.push_back({entity, pos.x, pos.y, vx, vy, r, invMass, restitution, type, hw, hh});
+        cache.push_back({entity, pos.x, pos.y, pos.theta, vx, vy, omega, r, invMass, restitution, type, hw, hh});
     });
 }
 
@@ -126,8 +126,10 @@ void PhysicsSystem::apply_changes_to_registry(entt::registry& registry) {
             auto& vel = registry.get<Velocity>(p.entity);
             pos.x = p.x;
             pos.y = p.y;
+            pos.theta = p.theta;
             vel.x = p.vx;
             vel.y = p.vy;
+            vel.omega = p.omega;
         }
     }
 }
@@ -168,16 +170,16 @@ void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
         result = check_circle_circle({pA.x, pA.y}, pA.r, {pB.x, pB.y}, pB.r);
     }
     else if (pA.type == 0 && pB.type == 1) { // Circle vs Box
-        result = check_circle_box({pA.x, pA.y}, pA.r, {pB.x, pB.y}, {pB.hw * 2.0f, pB.hh * 2.0f});
+        result = check_circle_rotated_box({pA.x, pA.y}, pA.r, {pB.x, pB.y}, {pB.hw * 2.0f, pB.hh * 2.0f}, pB.theta);
         // Inversion normale car A vs B
         result.normal_vector.x *= -1.0f;
         result.normal_vector.y *= -1.0f;
     }
     else if (pA.type == 1 && pB.type == 0) { // Box vs Circle
-        result = check_circle_box({pB.x, pB.y}, pB.r, {pA.x, pA.y}, {pA.hw * 2.0f, pA.hh * 2.0f});
+        result = check_circle_rotated_box({pB.x, pB.y}, pB.r, {pA.x, pA.y}, {pA.hw * 2.0f, pA.hh * 2.0f}, pA.theta);
     }
     else { // Box vs Box
-        result = check_box_box({pA.x, pA.y}, {pA.hw * 2.0f, pA.hh * 2.0f}, {pB.x, pB.y}, {pB.hw * 2.0f, pB.hh * 2.0f});
+        result = check_rotated_box_box({pA.x, pA.y}, {pA.hw * 2.0f, pA.hh * 2.0f}, pA.theta, {pB.x, pB.y}, {pB.hw * 2.0f, pB.hh * 2.0f}, pB.theta);
     }
 
     if (result.is_colliding) {

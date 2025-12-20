@@ -10,13 +10,13 @@ struct Vect2 {
 struct Position {
     float x;
     float y;
-    float teta;
+    float theta;
 };
 
 struct Velocity {
     float x;
     float y;
-    float w;
+    float omega;
 };
 
 struct ForceAccumulator {

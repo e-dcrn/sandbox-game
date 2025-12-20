@@ -27,8 +27,8 @@ void draw_circle_entity(SDL_Renderer* renderer, const Position& pos, const Circl
     SDL_Color lineColor = get_contrast_color(circle.color);
     SDL_SetRenderDrawColor(renderer, lineColor.r, lineColor.g, lineColor.b, 255);
 
-    float end_x = pos.x + std::cos(pos.teta) * circle.radius;
-    float end_y = pos.y + std::sin(pos.teta) * circle.radius;
+    float end_x = pos.x + std::cos(pos.theta) * circle.radius;
+    float end_y = pos.y + std::sin(pos.theta) * circle.radius;
 
     SDL_RenderDrawLine(renderer, 
                        static_cast<int>(pos.x), 
@@ -38,8 +38,8 @@ void draw_circle_entity(SDL_Renderer* renderer, const Position& pos, const Circl
 }
 
 void draw_rectangle_entity(SDL_Renderer* renderer, const Position& pos, const Rectangle& rect) {
-    float c = std::cos(pos.teta);
-    float s = std::sin(pos.teta);
+    float c = std::cos(pos.theta);
+    float s = std::sin(pos.theta);
     float hw = rect.width * 0.5f;
     float hh = rect.height * 0.5f;
 

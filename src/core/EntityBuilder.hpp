@@ -32,7 +32,7 @@ public:
     }
 
     EntityBuilder& withAngle(float degrees) {
-        radians = degrees * (3.14159f / 180.0f);
+        m_theta = degrees * (3.14159f / 180.0f);
         return *this;
     }
 
@@ -101,7 +101,7 @@ public:
         auto entity = m_registry.create();
 
         // 1. Position & Vélocité
-        m_registry.emplace<Position>(entity, m_x, m_y, radians);
+        m_registry.emplace<Position>(entity, m_x, m_y, m_theta);
         m_registry.emplace<Velocity>(entity, m_vx, m_vy, m_omega);
         
         // 3. Force Accumulator (Indispensable)
@@ -156,7 +156,7 @@ private:
     // Default values
     enum class ShapeType { NONE, CIRCLE, BOX } m_type = ShapeType::NONE;
     float m_x = 0, m_y = 0;
-    float m_vx = 0, m_vy = 0, radians = 0;
+    float m_vx = 0, m_vy = 0, m_theta = 0;
     float m_radius = 10.0f;
     float m_width = 10.0f, m_height = 10.0f;
     float m_omega = 0.0f;

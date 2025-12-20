@@ -9,8 +9,8 @@
 
 struct ParticleCache {
     entt::entity entity;
-    float x, y;      // Position
-    float vx, vy;    // Velocity
+    float x, y, theta;      // Position
+    float vx, vy, omega;    // Velocity
     float r;         // Rayon (ou demi-taille)
     float invMass;
     float restitution;
@@ -28,7 +28,7 @@ public:
     void update(entt::registry& registry, float dt);
 
 private:
-    const float CELL_SIZE = 30.0f; // Cellule plus large pour moins de checks
+    const float CELL_SIZE = 3000.0f; // Cellule plus large pour moins de checks
     
     // TABLE DE HACHAGE FIXE (Supporte monde infini par enroulement)
     static const int HASH_SIZE = 4093; 
