@@ -322,12 +322,202 @@ void Test_Maths_Circle_Box() {
     }
 }
 
+void Test_Maths_Circle_RotatedBox() {
+    std::cout << "  > Testing Math: Circle vs Rotated Box (8 Cases)..." << std::endl;
+    float pi = 3.1415926535f;
+
+    // --- 1. Rotation 0° (Référence AABB) ---
+    {
+        Vect2 boxPos = {0, 0}; Vect2 boxDim = {20, 10}; float angle = 0.0f;
+        Vect2 circlePos = {12, 0}; float radius = 5.0f;
+        CollisionResult res = check_circle_rotated_box(circlePos, radius, boxPos, boxDim, angle);
+        ExpectTrue(res.is_colliding, "[1] 0 deg - Standard");
+        ExpectTrue(IsVecClose(res.normal_vector, {1.0f, 0.0f}), "[1] Normal X");
+    }
+
+    // --- 2. Rotation 90° (La largeur devient hauteur) ---
+    {
+        Vect2 boxPos = {0, 0}; Vect2 boxDim = {20, 10}; float angle = pi / 2.0f; 
+        Vect2 circlePos = {0, 12}; float radius = 5.0f; // Tape le "haut" (anciennement coté droit)
+        CollisionResult res = check_circle_rotated_box(circlePos, radius, boxPos, boxDim, angle);
+        ExpectTrue(res.is_colliding, "[2] 90 deg - Top Hit");
+        ExpectTrue(IsVecClose(res.normal_vector, {0.0f, 1.0f}), "[2] Normal Y");
+    }
+
+    // --- 3. Rotation 45° (Face Diagonale) ---
+    {
+        Vect2 boxPos = {0, 0}; Vect2 boxDim = {20, 20}; float angle = pi / 4.0f;
+        float dist = 15.0f; 
+        Vect2 circlePos = { dist * 0.7071f, dist * 0.7071f }; 
+        CollisionResult res = check_circle_rotated_box(circlePos, 10.0f, boxPos, boxDim, angle);
+        ExpectTrue(res.is_colliding, "[3] 45 deg - Face");
+        // La normale doit être diagonale (0.7, 0.7)
+        ExpectTrue(res.normal_vector.x > 0.5f && res.normal_vector.y > 0.5f, "[3] Normal Diag");
+    }
+
+    // --- 4. Coin (Corner Hit) avec Rotation ---
+    {
+        Vect2 boxPos = {100, 100}; Vect2 boxDim = {20, 20}; float angle = pi / 4.0f;
+        // Le coin local (10,10) tourné de 45° est à (0, 14.14) par rapport au centre.
+        Vect2 circlePos = {100.0f, 114.14f + 2.0f}; // Juste au dessus du coin
+        float radius = 5.0f;
+        CollisionResult res = check_circle_rotated_box(circlePos, radius, boxPos, boxDim, angle);
+        ExpectTrue(res.is_colliding, "[4] Corner Hit");
+        // La normale du coin (1,1) local devient (0,1) monde après rotation 45°
+        ExpectTrue(IsVecClose(res.normal_vector, {0.0f, 1.0f}), "[4] Corner Normal Transformed");
+    }
+
+    // --- 5. Angle Négatif (-45°) ---
+    {
+        // Boite tournée vers la droite-bas
+        Vect2 boxPos = {0, 0}; Vect2 boxDim = {20, 20}; float angle = -pi / 4.0f;
+        Vect2 circlePos = {10, -10}; // Dans le quadrant bas-droit
+        CollisionResult res = check_circle_rotated_box(circlePos, 5.0f, boxPos, boxDim, angle);
+        ExpectTrue(res.is_colliding, "[5] Negative Angle");
+    }
+
+    // --- 6. Inclusion Totale (Cercle DANS la boite) ---
+    {
+        // Centre sur centre
+        Vect2 boxPos = {10, 10}; Vect2 boxDim = {20, 10}; float angle = 1.0f; // Angle arbitraire
+        Vect2 circlePos = {10, 10}; float radius = 2.0f;
+        
+        CollisionResult res = check_circle_rotated_box(circlePos, radius, boxPos, boxDim, angle);
+        ExpectTrue(res.is_colliding, "[6] Full Inclusion");
+        // Profondeur : min(halfW, halfH) + radius = 5 + 2 = 7.
+        ExpectTrue(IsClose(res.depth, 7.0f), "[6] Inclusion Depth");
+    }
+
+    // --- 7. Boîte très fine (Mur) ---
+    {
+        Vect2 boxPos = {0, 0}; Vect2 boxDim = {100, 1}; float angle = pi / 2.0f; // Mur vertical fin
+        Vect2 circlePos = {2.0f, 0.0f}; float radius = 2.0f; // Touche le mur
+        CollisionResult res = check_circle_rotated_box(circlePos, radius, boxPos, boxDim, angle);
+        ExpectTrue(res.is_colliding, "[7] Thin Wall");
+        ExpectTrue(IsVecClose(res.normal_vector, {1.0f, 0.0f}), "[7] Thin Wall Normal");
+    }
+
+    // --- 8. Loin (Pas de collision) ---
+    {
+        Vect2 boxPos = {0, 0}; Vect2 boxDim = {10, 10}; float angle = pi / 3.0f;
+        Vect2 circlePos = {50, 50}; 
+        CollisionResult res = check_circle_rotated_box(circlePos, 5.0f, boxPos, boxDim, angle);
+        ExpectTrue(!res.is_colliding, "[8] Far Away");
+    }
+}
+
+void Test_Maths_RotatedBox_Box() {
+    std::cout << "  > Testing Math: Rotated Box vs Rotated Box (8 Cases)..." << std::endl;
+    float pi = 3.1415926535f;
+
+    // --- 1. Aligné (Référence) ---
+    {
+        CollisionResult res = check_rotated_box_box({0,0}, {20,20}, 0, {15,0}, {20,20}, 0);
+        ExpectTrue(res.is_colliding, "[1] Aligned");
+        ExpectTrue(IsVecClose(res.normal_vector, {1.0f, 0.0f}), "[1] Normal");
+    }
+
+    // --- 2. La Croix (The Cross) ---
+    // Cas classique qui piège les algos simplistes.
+    // A: 20x2 (Horizontale). B: 2x20 (Verticale). Centre commun.
+    // Overlap X: petit. Overlap Y: petit.
+    {
+        CollisionResult res = check_rotated_box_box(
+            {0,0}, {20, 2}, 0.0f,         // Barre -
+            {0,0}, {2, 20}, pi / 2.0f     // Barre | (tournée 90)
+        );
+        ExpectTrue(res.is_colliding, "[2] The Cross (+)");
+        // L'overlap est le même sur les 4 axes (c'est un carré 2x2 au milieu).
+        // La profondeur doit être 1.0 (half width du petit coté) + 1.0 = 2.0 ? 
+        // Non, SAT cherche à sortir le plus vite. Sortir par X (dist 1) ou Y (dist 1).
+        ExpectTrue(res.depth > 0.0f, "[2] Cross Depth found");
+    }
+
+    // --- 3. Diamant sur le Sol (45°) ---
+    {
+        // Sol (40x10) vs Cube tourné (20x20)
+        CollisionResult res = check_rotated_box_box(
+            {0,0}, {40,10}, 0.0f,
+            {0,10}, {20,20}, pi/4.0f 
+        );
+        ExpectTrue(res.is_colliding, "[3] Diamond/Floor");
+        // La normale doit repousser vers le HAUT (Axe Y du sol) car c'est le séparateur le plus fort
+        ExpectTrue(IsClose(std::abs(res.normal_vector.y), 1.0f), "[3] Floor Normal dominates");
+    }
+
+    // --- 4. Presque Parallèles (1°) - Test de précision ---
+    // Souvent les produits scalaires foirent quand les axes sont presque colinéaires
+    {
+        CollisionResult res = check_rotated_box_box(
+            {0,0}, {20,20}, 0.0f,
+            {15,0.5f}, {20,20}, 0.017f // ~1 degré
+        );
+        ExpectTrue(res.is_colliding, "[4] Almost Parallel");
+        ExpectTrue(IsClose(std::abs(res.normal_vector.x), 1.0f), "[4] Normal X dominates");
+    }
+
+    // --- 5. Inclusion Totale Rotative ---
+    // Petite boite tournée DANS une grande boite droite
+    {
+        CollisionResult res = check_rotated_box_box(
+            {0,0}, {100,100}, 0.0f,
+            {0,0}, {10,10}, pi/3.0f
+        );
+        ExpectTrue(res.is_colliding, "[5] Full Inclusion");
+        // La normale doit pousser vers le bord le plus proche (disons X ou Y, peu importe, mais valide)
+        ExpectTrue(res.depth > 40.0f, "[5] Deep Depth"); // Doit sortir de ~50 unités
+    }
+
+    // --- 6. Coins qui se touchent (Kissing Corners) ---
+    // Très dur à détecter. On fait un léger overlap pour être sûr.
+    {
+        // A: 0,0 (20x20). Coin droit-haut: (10,10).
+        // B: 20,20 (20x20). Coin gauche-bas: (10,10).
+        // On rapproche B un tout petit peu: (19.8, 19.8)
+        CollisionResult res = check_rotated_box_box(
+            {0,0}, {20,20}, 0.0f,
+            {19.5f, 19.5f}, {20,20}, 0.0f
+        );
+        ExpectTrue(res.is_colliding, "[6] Corner Kiss");
+        // La normale devrait être diagonale ou un des axes principaux selon l'implémentation
+        // SAT favorise souvent un axe principal s'il y a égalité, mais ici on attend juste true.
+    }
+
+    // --- 7. Séparation par Rotation (Le ventilateur) ---
+    // Si B ne tournait pas, il toucherait. Mais il tourne et l'espace se libère.
+    {
+        // A: (0,0) 20x2. B: (12, 0) 20x2.
+        // Si B à 0°, ça touche (overlap X).
+        // Si B à 90°, c'est une barre verticale à x=12. 
+        // Largeur B devient 2. Étendue X: 11 à 13.
+        // Bord droit A: 10. -> Pas de collision (11 > 10).
+        CollisionResult res = check_rotated_box_box(
+            {0,0}, {20,2}, 0.0f,
+            {12,0}, {20,2}, pi/2.0f
+        );
+        ExpectTrue(!res.is_colliding, "[7] Separated by 90deg rotation");
+    }
+
+    // --- 8. Gigantisme (Échelle) ---
+    // Une boite géante vs une minuscule. Test de précision float.
+    {
+        CollisionResult res = check_rotated_box_box(
+            {0,0}, {10000, 10000}, 0.1f,
+            {5000, 0}, {1, 1}, 0.0f
+        );
+        // Le bord est vers 5000. La petite boite est à 5000. Ça doit toucher.
+        ExpectTrue(res.is_colliding, "[8] Huge vs Tiny");
+    }
+}
+
 // Fonction principale qui appelle les 3 sous-tests
 void Test_Collision_Maths() {
     std::cout << "--- Testing Collision Maths (All Types) ---" << std::endl;
     Test_Maths_Circle_Circle();
     Test_Maths_Box_Box();
     Test_Maths_Circle_Box();
+    Test_Maths_Circle_RotatedBox();
+    Test_Maths_RotatedBox_Box();
 }
 
 // ================================================================================================

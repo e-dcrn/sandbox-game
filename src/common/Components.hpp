@@ -2,6 +2,11 @@
 
 #include <SDL.h>
 
+struct Vect2 {
+    float x;
+    float y;
+};
+
 struct Position {
     float x;
     float y;
@@ -41,6 +46,11 @@ struct Collider {
     float radius;
     float width;
     float height;
+};
+
+struct AABB {
+    float x, y;
+    float w, h;
 };
 
 struct Circle {
