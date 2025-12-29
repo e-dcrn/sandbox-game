@@ -2,9 +2,9 @@
 #include "forces/Gravity.hpp"
 
 constexpr int PHYSICS_SUB_STEPS = 1;
-constexpr float REWIND_THRESHOLD_SQ = 0.01f;
+constexpr float REWIND_THRESHOLD_SQ = 0.00001f;
 constexpr float MAX_REWIND_TIME = 0.05f;
-constexpr float EPSILON = 0.001f;
+constexpr float EPSILON = 0.00001f;
 
 void PhysicsSystem::init() {
     force_registry.add([](entt::registry& r, float /*dt*/) { 
@@ -71,12 +71,13 @@ void PhysicsSystem::build_cache_from_registry(entt::registry& registry) {
     auto view = registry.view<Position, Collider>();
     
     view.each([this, &registry](auto entity, const auto& pos, const auto& col) {
-        float vx = 0, vy = 0, omega = 0, invMass = 0, restitution = 1.0f;
+        float vx = 0, vy = 0, omega = 0, invMass = 0, restitution = 1.0f, invInertia = 0.0f;
 
         if (registry.all_of<RigidBody>(entity)) {
             const auto& body = registry.get<RigidBody>(entity);
             invMass = body.inverseMass;
             restitution = body.restitution;
+            invInertia = body.inverseInertia;
         }
         if (registry.all_of<Velocity>(entity)) {
             const auto& vel = registry.get<Velocity>(entity);
@@ -91,7 +92,7 @@ void PhysicsSystem::build_cache_from_registry(entt::registry& registry) {
         float r = (type == 0) ? col.radius : std::sqrt(hw*hw + hh*hh); 
 
         // On remplit le cache
-        cache.push_back({entity, pos.x, pos.y, pos.theta, vx, vy, omega, r, invMass, restitution, type, hw, hh});
+        cache.push_back({entity, pos.x, pos.y, pos.theta, vx, vy, omega, r, invMass, invInertia, restitution, type, hw, hh});
     });
 }
 
@@ -121,7 +122,7 @@ void PhysicsSystem::refresh_grid_from_cache() {
 void PhysicsSystem::apply_changes_to_registry(entt::registry& registry) {
     // Copie Cache -> Registry (Seulement pour les dynamiques)
     for(const auto& p : cache) {
-        if (p.invMass > 0) {
+        if (p.invMass > 0 || p.invInertia > 0) {
             auto& pos = registry.get<Position>(p.entity);
             auto& vel = registry.get<Velocity>(p.entity);
             pos.x = p.x;
@@ -140,27 +141,50 @@ float PhysicsSystem::combine_restitution(float rA, float rB) {
 }
 
 // Cette fonction ne touche PAS aux positions (pos.x), seulement aux vitesses (vel.x)
-void PhysicsSystem::apply_impulse_response(ParticleCache& pA, ParticleCache& pB, const Vect2& normal) {
-    float relVelX = pB.vx - pA.vx;
-    float relVelY = pB.vy - pA.vy;
-    float velAlongNormal = relVelX * normal.x + relVelY * normal.y;
+void PhysicsSystem::apply_impulse_response(ParticleCache& pA, ParticleCache& pB, 
+        const Vect2& normal, const Vect2& contact_point) {
+    Vect2 rA = { contact_point.x - pA.x, contact_point.y - pA.y };
+    Vect2 rB = { contact_point.x - pB.x, contact_point.y - pB.y };
+
+    Vect2 rotVelA = cross_product(pA.omega, rA);
+    Vect2 rotVelB = cross_product(pB.omega, rB);
+
+    Vect2 totalVelA = { pA.vx + rotVelA.x, pA.vy + rotVelA.y };
+    Vect2 totalVelB = { pB.vx + rotVelB.x, pB.vy + rotVelB.y };
+
+    Vect2 relVel = { totalVelB.x - totalVelA.x, totalVelB.y - totalVelA.y };
+
+    float velAlongNormal = relVel.x * normal.x + relVel.y * normal.y;
 
     if (velAlongNormal > 0) return;
 
     float e = combine_restitution(pA.restitution, pB.restitution);
-    if (velAlongNormal > -0.1f && velAlongNormal < 0.1f) e = 0.0f;
+    
+    if (velAlongNormal > -EPSILON && velAlongNormal < EPSILON) e = 0.0f;
+    float numerateur = -(1.0f + e) * velAlongNormal;
 
-    float j = -(1.0f + e) * velAlongNormal;
-    float totalMass = pA.invMass + pB.invMass;
-    if (totalMass > 0) j /= totalMass;
+    float rA_cross_n = cross_product(rA, normal);
+    float rB_cross_n = cross_product(rB, normal);
 
-    float impX = normal.x * j;
-    float impY = normal.y * j;
+    float invMassSum = pA.invMass + pB.invMass;
+    float angularCompA = (rA_cross_n * rA_cross_n) * pA.invInertia;
+    float angularCompB = (rB_cross_n * rB_cross_n) * pB.invInertia;
 
-    pA.vx -= impX * pA.invMass;
-    pA.vy -= impY * pA.invMass;
-    pB.vx += impX * pB.invMass;
-    pB.vy += impY * pB.invMass;
+    float denominateur = invMassSum + angularCompA + angularCompB;
+
+    if (denominateur == 0.0f) return;
+
+    float j = numerateur / denominateur;
+
+    Vect2 impulse = { normal.x * j, normal.y * j };
+
+    pA.vx -= impulse.x * pA.invMass;
+    pA.vy -= impulse.y * pA.invMass;
+    pA.omega -= pA.invInertia * cross_product(rA, impulse); 
+
+    pB.vx += impulse.x * pB.invMass;
+    pB.vy += impulse.y * pB.invMass;
+    pB.omega += pB.invInertia * cross_product(rB, impulse);
 }
 
 void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
@@ -193,7 +217,7 @@ void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
         float relVelY = (pB.vy - pA.vy);
         float velAlongNormal = relVelX * result.normal_vector.x + relVelY * result.normal_vector.y;
         
-        if (velAlongNormal > 0) return;
+        // if (velAlongNormal > 0) return;
 
         float relSpeedSq = relVelX * relVelX + relVelY * relVelY;
         bool can_rewind = (velAlongNormal < -EPSILON) && 
@@ -205,15 +229,19 @@ void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
 
             pA.x -= pA.vx * timeToRewind;
             pA.y -= pA.vy * timeToRewind;
+            pA.theta -= pA.omega * timeToRewind;
             pB.x -= pB.vx * timeToRewind;
             pB.y -= pB.vy * timeToRewind;
+            pB.theta -= pB.omega * timeToRewind;
 
-            apply_impulse_response(pA, pB, result.normal_vector);
+            apply_impulse_response(pA, pB, result.normal_vector,result.contact_point);
 
             pA.x += pA.vx * timeToRewind;
             pA.y += pA.vy * timeToRewind;
+            pA.theta += pA.omega * timeToRewind;
             pB.x += pB.vx * timeToRewind;
             pB.y += pB.vy * timeToRewind;
+            pB.theta += pB.omega * timeToRewind;
         } 
         else {
             float move = result.depth / totalMass;
@@ -222,7 +250,7 @@ void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
             pB.x += result.normal_vector.x * invMassB * move;
             pB.y += result.normal_vector.y * invMassB * move;
 
-            apply_impulse_response(pA, pB, result.normal_vector);
+            apply_impulse_response(pA, pB, result.normal_vector,result.contact_point);
         }
     }
 }
@@ -232,7 +260,7 @@ void PhysicsSystem::solve_collisions() {
     // On itère sur le CACHE linéaire (Ultra rapide)
     for(int i = 0; i < (int)cache.size(); ++i) {
         ParticleCache& pA = cache[i];
-        if (pA.invMass == 0) continue; // Les murs ne cherchent pas
+        if (pA.invMass == 0 && pA.invInertia == 0) continue; // Les murs ne cherchent pas
 
         int cx = (int)std::floor(pA.x / CELL_SIZE);
         int cy = (int)std::floor(pA.y / CELL_SIZE);
@@ -248,14 +276,7 @@ void PhysicsSystem::solve_collisions() {
                     ParticleCache& pB = cache[other_i];
 
                     // Optimisation "Processed Pairs" via ID (Seulement entre dynamiques)
-                    if (pB.invMass > 0 && pA.entity >= pB.entity) continue;
-
-                    // Broadphase Cache
-                    float dist_x = std::abs(pA.x - pB.x);
-                    float rSum = pA.r + pB.r;
-                    if (dist_x > rSum) continue;
-                    float dist_y = std::abs(pA.y - pB.y);
-                    if (dist_y > rSum) continue;
+                    if ((pB.invMass > 0 || pB.invInertia > 0) && pA.entity >= pB.entity) continue;
 
                     // Résolution
                     resolve_pair(pA, pB);

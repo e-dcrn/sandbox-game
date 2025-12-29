@@ -33,6 +33,14 @@ inline Vect2 rotate_vector(Vect2 v, float angle) {
     return { v.x * c - v.y * s, v.x * s + v.y * c };
 }
 
+inline float cross_product(const Vect2& a, const Vect2& b) {
+    return a.x * b.y - a.y * b.x;
+}
+
+inline Vect2 cross_product(float s, const Vect2& a) {
+    return { -s * a.y, s * a.x };
+}
+
 inline CollisionResult check_circle_circle(Vect2 centerA, float radiusA, Vect2 centerB, float radiusB) {
     float distX = centerB.x - centerA.x;
     float distY = centerB.y - centerA.y;

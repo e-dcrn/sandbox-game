@@ -13,6 +13,7 @@ struct ParticleCache {
     float vx, vy, omega;    // Velocity
     float r;         // Rayon (ou demi-taille)
     float invMass;
+    float invInertia;
     float restitution;
     int type;        // 0=Circle, 1=Box
     float hw, hh;    // Pour les boites
@@ -42,7 +43,8 @@ private:
 
     ForceRegistry force_registry;
     static float combine_restitution(float rA, float rB);
-    static void apply_impulse_response(ParticleCache& pA, ParticleCache& pB, const Vect2& normal);
+    static void apply_impulse_response(ParticleCache& pA, ParticleCache& pB,
+         const Vect2& normal, const Vect2& contact_point);
     static void resolve_pair(ParticleCache& pA, ParticleCache& pB);
     void solve_collisions();
     RayHit sweep_static_collisions(entt::registry& registry, 
