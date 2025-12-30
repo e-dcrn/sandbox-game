@@ -127,7 +127,7 @@ void PhysicsSystem::apply_changes_to_registry(entt::registry& registry) {
             auto& vel = registry.get<Velocity>(p.entity);
             pos.x = p.x;
             pos.y = p.y;
-            pos.theta = p.theta;
+            pos.theta = p.theta; 
             vel.x = p.vx;
             vel.y = p.vy;
             vel.omega = p.omega;
@@ -143,8 +143,24 @@ float PhysicsSystem::combine_restitution(float rA, float rB) {
 // Cette fonction ne touche PAS aux positions (pos.x), seulement aux vitesses (vel.x)
 void PhysicsSystem::apply_impulse_response(ParticleCache& pA, ParticleCache& pB, 
         const Vect2& normal, const Vect2& contact_point) {
-    Vect2 rA = { contact_point.x - pA.x, contact_point.y - pA.y };
-    Vect2 rB = { contact_point.x - pB.x, contact_point.y - pB.y };
+    Vect2 rA;
+    Vect2 rB;
+
+    if (pA.type == 0) { 
+        // Le bras de levier rA pointe du centre vers le contact
+        // C'est donc la normale (qui va de A vers B) multipliée par le rayon
+        rA = { normal.x * pA.r, normal.y * pA.r };
+    } else {
+        rA = { contact_point.x - pA.x, contact_point.y - pA.y };
+    }
+
+    // Pour un cercle (Objet B)
+    if (pB.type == 0) {
+        // La normale va de A vers B, donc pour B le levier est inversé
+        rB = { -normal.x * pB.r, -normal.y * pB.r };
+    } else {
+        rB = { contact_point.x - pB.x, contact_point.y - pB.y };
+    }
 
     Vect2 rotVelA = cross_product(pA.omega, rA);
     Vect2 rotVelB = cross_product(pB.omega, rB);
@@ -211,20 +227,22 @@ void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
         float invMassB = pB.invMass;
         float totalMass = invMassA + invMassB;
 
-        if (totalMass == 0.0f) return;
+        if (totalMass == 0.0f && pA.invInertia == 0.0f && pB.invInertia == 0.0f) return;
 
-        float relVelX = (pB.vx - pA.vx);
-        float relVelY = (pB.vy - pA.vy);
-        float velAlongNormal = relVelX * result.normal_vector.x + relVelY * result.normal_vector.y;
-        
-        // if (velAlongNormal > 0) return;
+        Vect2 rA = { result.contact_point.x - pA.x, result.contact_point.y - pA.y };
+        Vect2 rB = { result.contact_point.x - pB.x, result.contact_point.y - pB.y };
 
-        float relSpeedSq = relVelX * relVelX + relVelY * relVelY;
-        bool can_rewind = (velAlongNormal < -EPSILON) && 
-                        (velAlongNormal * velAlongNormal > REWIND_THRESHOLD_SQ * relSpeedSq);
+        Vect2 rotVelA = { -pA.omega * rA.y, pA.omega * rA.x };
+        Vect2 rotVelB = { -pB.omega * rB.y, pB.omega * rB.x };
 
-        if (can_rewind) {
-            float timeToRewind = result.depth / -velAlongNormal;
+        Vect2 totalVelA = { pA.vx + rotVelA.x, pA.vy + rotVelA.y };
+        Vect2 totalVelB = { pB.vx + rotVelB.x, pB.vy + rotVelB.y };
+
+        Vect2 relVelContact = { totalVelB.x - totalVelA.x, totalVelB.y - totalVelA.y };
+        float contactVelAlongNormal = relVelContact.x * result.normal_vector.x + relVelContact.y * result.normal_vector.y;
+
+        if (contactVelAlongNormal < -EPSILON) {
+            float timeToRewind = result.depth / -contactVelAlongNormal;
             if (timeToRewind > MAX_REWIND_TIME) timeToRewind = MAX_REWIND_TIME; 
 
             pA.x -= pA.vx * timeToRewind;
