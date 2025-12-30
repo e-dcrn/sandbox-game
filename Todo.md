@@ -1,7 +1,11 @@
 # TODO
 
 ## Current :
-1. Factoriser le bras de levier dans les collisions
+1. Factoriser la physique
+- [x] Séparer les fonction dans PhysicsSystem,PhysicsMath et Collision
+- [x] Utiliser les namespace
+- [x] Renomer les fonctions et structures si nécéssaire
+- [ ] Créer des nouvelle fonction mathématique pour simplifier PhysicsSystem ou Collision
 2. Checker les points de contact qui peuvent encore poser problème (test)
 3. Implémenter AABB pour le partionnement spacial
 

@@ -39,8 +39,8 @@ void PhysicsSystem::update(entt::registry& registry, float dt) {
             float dx = vel.x * sub_dt;
             float dy = vel.y * sub_dt;
 
-            // RayHit wall_hit = sweep_static_collisions(registry, pos, col, dx, dy);
-            RayHit wall_hit;
+            // RaycastHit wall_hit = sweep_static_collisions(registry, pos, col, dx, dy);
+            Collision::RaycastHit wall_hit;
             wall_hit.hit = false;
             if (registry.any_of<UseRaycast>(entity)) {
                 wall_hit = sweep_static_collisions(registry, pos, col, dx, dy);
@@ -48,7 +48,7 @@ void PhysicsSystem::update(entt::registry& registry, float dt) {
             apply_continuous_movement(pos, vel, body, wall_hit, dx, dy, sub_dt);
         });
 
-        build_cache_from_registry(registry);
+        sync_from_registry(registry);
         for(int j = 0; j < 6; ++j){
             solve_collisions();
         }
@@ -65,7 +65,7 @@ int PhysicsSystem::get_spatial_hash(int cx, int cy) const {
     return n;
 }
 
-void PhysicsSystem::build_cache_from_registry(entt::registry& registry) {
+void PhysicsSystem::sync_from_registry(entt::registry& registry) {
     cache.clear(); // On vide le cache, mais pas la grille (fait ailleurs)
     
     auto view = registry.view<Position, Collider>();
@@ -135,13 +135,8 @@ void PhysicsSystem::apply_changes_to_registry(entt::registry& registry) {
     }
 }
 
-float PhysicsSystem::combine_restitution(float rA, float rB) {
-    if (rA > 1.0f || rB > 1.0f) return std::max(rA, rB);
-    return rA * rB;
-}
-
 // Cette fonction ne touche PAS aux positions (pos.x), seulement aux vitesses (vel.x)
-void PhysicsSystem::apply_impulse_response(ParticleCache& pA, ParticleCache& pB, 
+void PhysicsSystem::apply_impulse(ParticleCache& pA, ParticleCache& pB, 
         const Vect2& normal, const Vect2& contact_point) {
     Vect2 rA;
     Vect2 rB;
@@ -162,8 +157,8 @@ void PhysicsSystem::apply_impulse_response(ParticleCache& pA, ParticleCache& pB,
         rB = { contact_point.x - pB.x, contact_point.y - pB.y };
     }
 
-    Vect2 rotVelA = cross_product(pA.omega, rA);
-    Vect2 rotVelB = cross_product(pB.omega, rB);
+    Vect2 rotVelA = PhysicsMath::cross(pA.omega, rA);
+    Vect2 rotVelB = PhysicsMath::cross(pB.omega, rB);
 
     Vect2 totalVelA = { pA.vx + rotVelA.x, pA.vy + rotVelA.y };
     Vect2 totalVelB = { pB.vx + rotVelB.x, pB.vy + rotVelB.y };
@@ -174,13 +169,13 @@ void PhysicsSystem::apply_impulse_response(ParticleCache& pA, ParticleCache& pB,
 
     if (velAlongNormal > 0) return;
 
-    float e = combine_restitution(pA.restitution, pB.restitution);
+    float e = PhysicsMath::combine_restitution(pA.restitution, pB.restitution);
     
     if (velAlongNormal > -EPSILON && velAlongNormal < EPSILON) e = 0.0f;
     float numerateur = -(1.0f + e) * velAlongNormal;
 
-    float rA_cross_n = cross_product(rA, normal);
-    float rB_cross_n = cross_product(rB, normal);
+    float rA_cross_n = PhysicsMath::cross(rA, normal);
+    float rB_cross_n = PhysicsMath::cross(rB, normal);
 
     float invMassSum = pA.invMass + pB.invMass;
     float angularCompA = (rA_cross_n * rA_cross_n) * pA.invInertia;
@@ -196,30 +191,30 @@ void PhysicsSystem::apply_impulse_response(ParticleCache& pA, ParticleCache& pB,
 
     pA.vx -= impulse.x * pA.invMass;
     pA.vy -= impulse.y * pA.invMass;
-    pA.omega -= pA.invInertia * cross_product(rA, impulse); 
+    pA.omega -= pA.invInertia * PhysicsMath::cross(rA, impulse); 
 
     pB.vx += impulse.x * pB.invMass;
     pB.vy += impulse.y * pB.invMass;
-    pB.omega += pB.invInertia * cross_product(rB, impulse);
+    pB.omega += pB.invInertia * PhysicsMath::cross(rB, impulse);
 }
 
-void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
-    CollisionResult result = {false, {0,0}, 0, {0,0}};
+void PhysicsSystem::resolve_contact(ParticleCache& pA, ParticleCache& pB) {
+    Collision::Manifold result = {false, {0,0}, 0, {0,0}};
 
     if (pA.type == 0 && pB.type == 0) { // Circle vs Circle
-        result = check_circle_circle({pA.x, pA.y}, pA.r, {pB.x, pB.y}, pB.r);
+        result = Collision::test_circles({pA.x, pA.y}, pA.r, {pB.x, pB.y}, pB.r);
     }
     else if (pA.type == 0 && pB.type == 1) { // Circle vs Box
-        result = check_circle_rotated_box({pA.x, pA.y}, pA.r, {pB.x, pB.y}, {pB.hw * 2.0f, pB.hh * 2.0f}, pB.theta);
+        result = Collision::test_circle_box_rotated({pA.x, pA.y}, pA.r, {pB.x, pB.y}, {pB.hw * 2.0f, pB.hh * 2.0f}, pB.theta);
         // Inversion normale car A vs B
         result.normal_vector.x *= -1.0f;
         result.normal_vector.y *= -1.0f;
     }
     else if (pA.type == 1 && pB.type == 0) { // Box vs Circle
-        result = check_circle_rotated_box({pB.x, pB.y}, pB.r, {pA.x, pA.y}, {pA.hw * 2.0f, pA.hh * 2.0f}, pA.theta);
+        result = Collision::test_circle_box_rotated({pB.x, pB.y}, pB.r, {pA.x, pA.y}, {pA.hw * 2.0f, pA.hh * 2.0f}, pA.theta);
     }
     else { // Box vs Box
-        result = check_rotated_box_box({pA.x, pA.y}, {pA.hw * 2.0f, pA.hh * 2.0f}, pA.theta, {pB.x, pB.y}, {pB.hw * 2.0f, pB.hh * 2.0f}, pB.theta);
+        result = Collision::test_boxes_rotated({pA.x, pA.y}, {pA.hw * 2.0f, pA.hh * 2.0f}, pA.theta, {pB.x, pB.y}, {pB.hw * 2.0f, pB.hh * 2.0f}, pB.theta);
     }
 
     if (result.is_colliding) {
@@ -252,7 +247,7 @@ void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
             pB.y -= pB.vy * timeToRewind;
             pB.theta -= pB.omega * timeToRewind;
 
-            apply_impulse_response(pA, pB, result.normal_vector,result.contact_point);
+            apply_impulse(pA, pB, result.normal_vector,result.contact_point);
 
             pA.x += pA.vx * timeToRewind;
             pA.y += pA.vy * timeToRewind;
@@ -268,7 +263,7 @@ void PhysicsSystem::resolve_pair(ParticleCache& pA, ParticleCache& pB) {
             pB.x += result.normal_vector.x * invMassB * move;
             pB.y += result.normal_vector.y * invMassB * move;
 
-            apply_impulse_response(pA, pB, result.normal_vector,result.contact_point);
+            apply_impulse(pA, pB, result.normal_vector,result.contact_point);
         }
     }
 }
@@ -297,18 +292,18 @@ void PhysicsSystem::solve_collisions() {
                     if ((pB.invMass > 0 || pB.invInertia > 0) && pA.entity >= pB.entity) continue;
 
                     // Résolution
-                    resolve_pair(pA, pB);
+                    resolve_contact(pA, pB);
                 }
             }
         }
     }
 }
 
-RayHit PhysicsSystem::sweep_static_collisions(entt::registry& registry, 
+Collision::RaycastHit PhysicsSystem::sweep_static_collisions(entt::registry& registry, 
                                               const Position& pos, 
                                               const Collider& body_collider, 
                                               float dx, float dy) {
-    RayHit best_hit;
+    Collision::RaycastHit best_hit;
     best_hit.t = 1.0f;
 
     // Récupération de la taille du joueur (on suppose que c'est le rayon d'un cercle pour simplifier)
@@ -320,21 +315,21 @@ RayHit PhysicsSystem::sweep_static_collisions(entt::registry& registry,
 
     statics.each([&](const auto& wall_pos, const auto& wall_col) {
         
-        RayHit current_hit;
+        Collision::RaycastHit current_hit;
 
         if (wall_col.type == ColliderType::BOX) {
             // Cas 1 : Mur Carré (On gonfle la boîte avec le rayon du joueur)
             float expanded_w = wall_col.width + body_radius * 2.0f;
             float expanded_h = wall_col.height + body_radius * 2.0f;
             
-            current_hit = ray_vs_aabb(pos.x, pos.y, dx, dy, 
+            current_hit = Collision::raycast_box(pos.x, pos.y, dx, dy, 
                                       wall_pos.x, wall_pos.y, expanded_w, expanded_h);
         } 
         else if (wall_col.type == ColliderType::CIRCLE) {
             // Cas 2 : Mur Rond (On gonfle le cercle avec le rayon du joueur)
             float expanded_radius = wall_col.radius + body_radius;
             
-            current_hit = ray_vs_circle(pos.x, pos.y, dx, dy, 
+            current_hit = Collision::raycast_circle(pos.x, pos.y, dx, dy, 
                                         wall_pos.x, wall_pos.y, expanded_radius);
         }
 
@@ -348,7 +343,7 @@ RayHit PhysicsSystem::sweep_static_collisions(entt::registry& registry,
 }
 
 void PhysicsSystem::apply_continuous_movement(Position& pos, Velocity& vel, const RigidBody& body,
-                                              const RayHit& hit, float dx, float dy, float dt) {
+                                              const Collision::RaycastHit& hit, float dx, float dy, float dt) {
     if (!hit.hit) {
         pos.x += dx; 
         pos.y += dy;

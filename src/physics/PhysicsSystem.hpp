@@ -1,11 +1,11 @@
 #pragma once
 #include <entt/entt.hpp>
 #include "ForceRegistry.hpp"
-#include "Components.hpp"
 #include "../common/Components.hpp"
 #include <unordered_map>
 #include <vector>
 #include "Collision.hpp"
+#include "PhysicsMath.hpp"
 
 struct ParticleCache {
     entt::entity entity;
@@ -37,20 +37,19 @@ private:
     std::vector<ParticleCache> cache; // Toutes les données contiguës ici
 
     int get_spatial_hash(int cx, int cy) const;
-    void build_cache_from_registry(entt::registry& registry); 
+    void sync_from_registry(entt::registry& registry); 
     void refresh_grid_from_cache();
     void apply_changes_to_registry(entt::registry& registry);
 
     ForceRegistry force_registry;
-    static float combine_restitution(float rA, float rB);
-    static void apply_impulse_response(ParticleCache& pA, ParticleCache& pB,
+    static void apply_impulse(ParticleCache& pA, ParticleCache& pB,
          const Vect2& normal, const Vect2& contact_point);
-    static void resolve_pair(ParticleCache& pA, ParticleCache& pB);
+    static void resolve_contact(ParticleCache& pA, ParticleCache& pB);
     void solve_collisions();
-    RayHit sweep_static_collisions(entt::registry& registry, 
+    Collision::RaycastHit sweep_static_collisions(entt::registry& registry, 
                                    const Position& pos, 
                                    const Collider& collider, 
                                    float dx, float dy);
     void apply_continuous_movement(Position& pos, Velocity& vel, const RigidBody& body,
-                                   const RayHit& hit, float dx, float dy, float dt);
+                                   const Collision::RaycastHit& hit, float dx, float dy, float dt);
 };

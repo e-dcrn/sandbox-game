@@ -1,6 +1,6 @@
 #pragma once
 #include <entt/entt.hpp>
-#include "../Components.hpp"
+#include "../../common/Components.hpp"
 
 namespace Forces {
     inline void apply_gravity(entt::registry& registry, float /*dt*/) { 

@@ -1,7 +1,6 @@
 #include "Game.hpp"
 #include "utils/Logger.hpp"
 #include "common/Components.hpp"
-#include "physics/Components.hpp"
 #include "render/RenderSystem.hpp"
 #include "render/DebugSystem.hpp"
 #include "EntityFactory.hpp"

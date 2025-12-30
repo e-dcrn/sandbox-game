@@ -4,7 +4,6 @@
 
 #include "EntityBuilder.hpp"
 #include "../common/Components.hpp"
-#include "../physics/Components.hpp"
 
 namespace Factory {
 

@@ -6,7 +6,6 @@
 #include <SDL_keyboard.h>
 #include <SDL_keycode.h>
 #include "common/Components.hpp"
-#include "physics/Components.hpp"
 #include "core/EntityFactory.hpp"
 #include <cstdlib>
 #include <ctime>
