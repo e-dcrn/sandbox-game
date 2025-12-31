@@ -23,7 +23,7 @@ void Test_Maths_Circle_Circle() {
         Vect2 c1 = {0, 0};
         Vect2 c2 = {15, 0}; 
         // Rayons 10. Distance 15. Overlap = 20 - 15 = 5.
-        CollisionResult res = check_circle_circle(c1, 10.0f, c2, 10.0f);
+        Collision::Manifold res = Collision::test_circles(c1, 10.0f, c2, 10.0f);
         
         ExpectTrue(res.is_colliding, "[Math] Standard Overlap");
         ExpectTrue(IsClose(res.depth, 5.0f), "[Math] Depth Correct");
@@ -40,7 +40,7 @@ void Test_Maths_Circle_Circle() {
         // Rayons 10. Distance 20. Overlap = 0.
         // Selon ton implémentation ( < vs <= ), cela peut être true ou false.
         // Généralement en physique on considère ça comme "pas de collision" ou "collision résolue".
-        CollisionResult res = check_circle_circle(c1, 10.0f, c2, 10.0f);
+        Collision::Manifold res = Collision::test_circles(c1, 10.0f, c2, 10.0f);
         
         // Si ta fonction utilise 'distSq < reqSq', c'est false.
         ExpectTrue(!res.is_colliding, "[Math] Touching (No Penetration)");
@@ -52,7 +52,7 @@ void Test_Maths_Circle_Circle() {
     {
         Vect2 c1 = {0, 0};
         Vect2 c2 = {30, 0}; 
-        CollisionResult res = check_circle_circle(c1, 10.0f, c2, 10.0f);
+        Collision::Manifold res = Collision::test_circles(c1, 10.0f, c2, 10.0f);
         ExpectTrue(!res.is_colliding, "[Math] Far Away");
     }
 
@@ -62,7 +62,7 @@ void Test_Maths_Circle_Circle() {
     {
         Vect2 c1 = {0, 0};
         Vect2 c2 = {0, 15}; // Au-dessus
-        CollisionResult res = check_circle_circle(c1, 10.0f, c2, 10.0f);
+        Collision::Manifold res = Collision::test_circles(c1, 10.0f, c2, 10.0f);
         
         ExpectTrue(res.is_colliding, "[Math] Vertical Overlap");
         ExpectTrue(IsClose(res.depth, 5.0f), "[Math] Vertical Depth");
@@ -80,7 +80,7 @@ void Test_Maths_Circle_Circle() {
         // Il est totalement DANS le grand.
         // Distance centres = 5. Rayons cumulés = 25.
         // Profondeur = 25 - 5 = 20.
-        CollisionResult res = check_circle_circle(c1, 20.0f, c2, 5.0f);
+        Collision::Manifold res = Collision::test_circles(c1, 20.0f, c2, 5.0f);
         
         ExpectTrue(res.is_colliding, "[Math] Full Containment");
         ExpectTrue(IsClose(res.depth, 20.0f), "[Math] Containment Depth");
@@ -95,7 +95,7 @@ void Test_Maths_Circle_Circle() {
         Vect2 c1 = {10, 10};
         Vect2 c2 = {10, 10};
         // Distance = 0. Division par zéro potentielle pour la normale !
-        CollisionResult res = check_circle_circle(c1, 10.0f, c2, 10.0f);
+        Collision::Manifold res = Collision::test_circles(c1, 10.0f, c2, 10.0f);
         
         ExpectTrue(res.is_colliding, "[Math] Same Position");
         ExpectTrue(IsClose(res.depth, 20.0f), "[Math] Same Position Depth"); // Rayon A + Rayon B
@@ -120,7 +120,7 @@ void Test_Maths_Box_Box() {
         Vect2 b1_pos = {0, 0};   Vect2 b1_size = {10, 10};
         Vect2 b2_pos = {8, 0};   Vect2 b2_size = {10, 10}; // Dist 8. Overlap = 10-8=2.
         
-        CollisionResult res = check_box_box(b1_pos, b1_size, b2_pos, b2_size);
+        Collision::Manifold res = Collision::test_boxes(b1_pos, b1_size, b2_pos, b2_size);
         ExpectTrue(res.is_colliding, "[Math] X Overlap");
         ExpectTrue(IsClose(res.depth, 2.0f), "[Math] X Depth");
         ExpectTrue(std::abs(res.normal_vector.x) > 0.9f, "[Math] Normal X");
@@ -133,7 +133,7 @@ void Test_Maths_Box_Box() {
         Vect2 b1_pos = {0, 0};   Vect2 b1_size = {10, 10};
         Vect2 b2_pos = {0, 9};   Vect2 b2_size = {10, 10}; // Overlap = 1.
         
-        CollisionResult res = check_box_box(b1_pos, b1_size, b2_pos, b2_size);
+        Collision::Manifold res = Collision::test_boxes(b1_pos, b1_size, b2_pos, b2_size);
         ExpectTrue(res.is_colliding, "[Math] Y Overlap");
         ExpectTrue(IsClose(res.depth, 1.0f), "[Math] Y Depth");
         ExpectTrue(std::abs(res.normal_vector.y) > 0.9f, "[Math] Normal Y");
@@ -148,7 +148,7 @@ void Test_Maths_Box_Box() {
         Vect2 b1_pos = {0, 0};   Vect2 b1_size = {10, 10};
         Vect2 b2_pos = {9, 2};   Vect2 b2_size = {10, 10}; 
 
-        CollisionResult res = check_box_box(b1_pos, b1_size, b2_pos, b2_size);
+        Collision::Manifold res = Collision::test_boxes(b1_pos, b1_size, b2_pos, b2_size);
         
         ExpectTrue(res.is_colliding, "[Math] SAT Mixed");
         ExpectTrue(IsClose(res.depth, 1.0f), "[Math] SAT picked smallest depth (X)");
@@ -168,7 +168,7 @@ void Test_Maths_Box_Box() {
         Vect2 big_pos = {0, 0};   Vect2 big_size = {20, 20};
         Vect2 small_pos = {5, 0}; Vect2 small_size = {2, 2};
 
-        CollisionResult res = check_box_box(big_pos, big_size, small_pos, small_size);
+        Collision::Manifold res = Collision::test_boxes(big_pos, big_size, small_pos, small_size);
 
         ExpectTrue(res.is_colliding, "[Math] Full Inclusion");
         // Profondeur attendue : Overlap X = (10+1) - 5 = 6.
@@ -187,7 +187,7 @@ void Test_Maths_Box_Box() {
         Vect2 b1_pos = {10, 10}; Vect2 b1_size = {10, 10};
         Vect2 b2_pos = {10, 10}; Vect2 b2_size = {10, 10};
         
-        CollisionResult res = check_box_box(b1_pos, b1_size, b2_pos, b2_size);
+        Collision::Manifold res = Collision::test_boxes(b1_pos, b1_size, b2_pos, b2_size);
         
         ExpectTrue(res.is_colliding, "[Math] Same Position");
         ExpectTrue(IsClose(res.depth, 10.0f), "[Math] Same Position Depth (Half Width/Height)");
@@ -204,7 +204,7 @@ void Test_Maths_Box_Box() {
         Vect2 b1_pos = {0, 0};   Vect2 b1_size = {10, 10};
         Vect2 b2_pos = {0, 10};  Vect2 b2_size = {10, 10}; // Overlap = 0
         
-        CollisionResult res = check_box_box(b1_pos, b1_size, b2_pos, b2_size);
+        Collision::Manifold res = Collision::test_boxes(b1_pos, b1_size, b2_pos, b2_size);
         ExpectTrue(!res.is_colliding, "[Math] Touching (No Penetration)");
     }
 }
@@ -224,7 +224,7 @@ void Test_Maths_Circle_Box() {
         // Distance surface = 4. Rayon = 5. Overlap = 1.
         Vect2 circ_pos = {14, 0}; 
         
-        CollisionResult res = check_circle_box(circ_pos, radius, box_pos, box_size);
+        Collision::Manifold res = Collision::test_circle_box(circ_pos, radius, box_pos, box_size);
         ExpectTrue(res.is_colliding, "[Math] Face X Overlap");
         ExpectTrue(IsClose(res.depth, 1.0f), "[Math] Face X Depth");
         // Normale : Doit repousser vers la droite (1, 0)
@@ -239,7 +239,7 @@ void Test_Maths_Circle_Box() {
         // Distance surface = 3. Rayon = 5. Overlap = 2.
         Vect2 circ_pos = {0, 13}; 
         
-        CollisionResult res = check_circle_box(circ_pos, radius, box_pos, box_size);
+        Collision::Manifold res = Collision::test_circle_box(circ_pos, radius, box_pos, box_size);
         ExpectTrue(res.is_colliding, "[Math] Face Y Overlap");
         ExpectTrue(IsClose(res.depth, 2.0f), "[Math] Face Y Depth");
         // Normale : Doit repousser vers le haut (0, 1)
@@ -263,7 +263,7 @@ void Test_Maths_Circle_Box() {
     // -------------------------------------------------------------------------
     {
         Vect2 circ_pos = {12.5f, 13.0f};
-        CollisionResult res = check_circle_box(circ_pos, radius, box_pos, box_size);
+        Collision::Manifold res = Collision::test_circle_box(circ_pos, radius, box_pos, box_size);
 
         ExpectTrue(res.is_colliding, "[Math] Corner Overlap");
         
@@ -289,7 +289,7 @@ void Test_Maths_Circle_Box() {
     // -------------------------------------------------------------------------
     {
         Vect2 circ_pos = {8, 0};
-        CollisionResult res = check_circle_box(circ_pos, radius, box_pos, box_size);
+        Collision::Manifold res = Collision::test_circle_box(circ_pos, radius, box_pos, box_size);
 
         ExpectTrue(res.is_colliding, "[Math] Inside Box");
         ExpectTrue(IsClose(res.depth, 7.0f), "[Math] Inside Depth (DistToEdge + Radius)");
@@ -305,9 +305,9 @@ void Test_Maths_Circle_Box() {
     // -------------------------------------------------------------------------
     {
         Vect2 circ_pos = {15, 0};
-        CollisionResult res = check_circle_box(circ_pos, radius, box_pos, box_size);
+        Collision::Manifold res = Collision::test_circle_box(circ_pos, radius, box_pos, box_size);
         
-        // Ta fonction check_circle_box renvoie TRUE si dist <= radius
+        // Ta fonction Collision::test_circle_box renvoie TRUE si dist <= radius
         ExpectTrue(res.is_colliding, "[Math] Touching Edge");
         ExpectTrue(IsClose(res.depth, 0.0f), "[Math] Touching Depth is 0");
     }
@@ -317,7 +317,7 @@ void Test_Maths_Circle_Box() {
     // -------------------------------------------------------------------------
     {
         Vect2 circ_pos = {20, 20}; 
-        CollisionResult res = check_circle_box(circ_pos, radius, box_pos, box_size);
+        Collision::Manifold res = Collision::test_circle_box(circ_pos, radius, box_pos, box_size);
         ExpectTrue(!res.is_colliding, "[Math] No Overlap");
     }
 }
@@ -330,7 +330,7 @@ void Test_Maths_Circle_RotatedBox() {
     {
         Vect2 boxPos = {0, 0}; Vect2 boxDim = {20, 10}; float angle = 0.0f;
         Vect2 circlePos = {12, 0}; float radius = 5.0f;
-        CollisionResult res = check_circle_rotated_box(circlePos, radius, boxPos, boxDim, angle);
+        Collision::Manifold res = Collision::test_circle_box_rotated(circlePos, radius, boxPos, boxDim, angle);
         ExpectTrue(res.is_colliding, "[1] 0 deg - Standard");
         ExpectTrue(IsVecClose(res.normal_vector, {1.0f, 0.0f}), "[1] Normal X");
     }
@@ -339,7 +339,7 @@ void Test_Maths_Circle_RotatedBox() {
     {
         Vect2 boxPos = {0, 0}; Vect2 boxDim = {20, 10}; float angle = pi / 2.0f; 
         Vect2 circlePos = {0, 12}; float radius = 5.0f; // Tape le "haut" (anciennement coté droit)
-        CollisionResult res = check_circle_rotated_box(circlePos, radius, boxPos, boxDim, angle);
+        Collision::Manifold res = Collision::test_circle_box_rotated(circlePos, radius, boxPos, boxDim, angle);
         ExpectTrue(res.is_colliding, "[2] 90 deg - Top Hit");
         ExpectTrue(IsVecClose(res.normal_vector, {0.0f, 1.0f}), "[2] Normal Y");
     }
@@ -349,7 +349,7 @@ void Test_Maths_Circle_RotatedBox() {
         Vect2 boxPos = {0, 0}; Vect2 boxDim = {20, 20}; float angle = pi / 4.0f;
         float dist = 15.0f; 
         Vect2 circlePos = { dist * 0.7071f, dist * 0.7071f }; 
-        CollisionResult res = check_circle_rotated_box(circlePos, 10.0f, boxPos, boxDim, angle);
+        Collision::Manifold res = Collision::test_circle_box_rotated(circlePos, 10.0f, boxPos, boxDim, angle);
         ExpectTrue(res.is_colliding, "[3] 45 deg - Face");
         // La normale doit être diagonale (0.7, 0.7)
         ExpectTrue(res.normal_vector.x > 0.5f && res.normal_vector.y > 0.5f, "[3] Normal Diag");
@@ -361,7 +361,7 @@ void Test_Maths_Circle_RotatedBox() {
         // Le coin local (10,10) tourné de 45° est à (0, 14.14) par rapport au centre.
         Vect2 circlePos = {100.0f, 114.14f + 2.0f}; // Juste au dessus du coin
         float radius = 5.0f;
-        CollisionResult res = check_circle_rotated_box(circlePos, radius, boxPos, boxDim, angle);
+        Collision::Manifold res = Collision::test_circle_box_rotated(circlePos, radius, boxPos, boxDim, angle);
         ExpectTrue(res.is_colliding, "[4] Corner Hit");
         // La normale du coin (1,1) local devient (0,1) monde après rotation 45°
         ExpectTrue(IsVecClose(res.normal_vector, {0.0f, 1.0f}), "[4] Corner Normal Transformed");
@@ -372,7 +372,7 @@ void Test_Maths_Circle_RotatedBox() {
         // Boite tournée vers la droite-bas
         Vect2 boxPos = {0, 0}; Vect2 boxDim = {20, 20}; float angle = -pi / 4.0f;
         Vect2 circlePos = {10, -10}; // Dans le quadrant bas-droit
-        CollisionResult res = check_circle_rotated_box(circlePos, 5.0f, boxPos, boxDim, angle);
+        Collision::Manifold res = Collision::test_circle_box_rotated(circlePos, 5.0f, boxPos, boxDim, angle);
         ExpectTrue(res.is_colliding, "[5] Negative Angle");
     }
 
@@ -382,7 +382,7 @@ void Test_Maths_Circle_RotatedBox() {
         Vect2 boxPos = {10, 10}; Vect2 boxDim = {20, 10}; float angle = 1.0f; // Angle arbitraire
         Vect2 circlePos = {10, 10}; float radius = 2.0f;
         
-        CollisionResult res = check_circle_rotated_box(circlePos, radius, boxPos, boxDim, angle);
+        Collision::Manifold res = Collision::test_circle_box_rotated(circlePos, radius, boxPos, boxDim, angle);
         ExpectTrue(res.is_colliding, "[6] Full Inclusion");
         // Profondeur : min(halfW, halfH) + radius = 5 + 2 = 7.
         ExpectTrue(IsClose(res.depth, 7.0f), "[6] Inclusion Depth");
@@ -392,7 +392,7 @@ void Test_Maths_Circle_RotatedBox() {
     {
         Vect2 boxPos = {0, 0}; Vect2 boxDim = {100, 1}; float angle = pi / 2.0f; // Mur vertical fin
         Vect2 circlePos = {2.0f, 0.0f}; float radius = 2.0f; // Touche le mur
-        CollisionResult res = check_circle_rotated_box(circlePos, radius, boxPos, boxDim, angle);
+        Collision::Manifold res = Collision::test_circle_box_rotated(circlePos, radius, boxPos, boxDim, angle);
         ExpectTrue(res.is_colliding, "[7] Thin Wall");
         ExpectTrue(IsVecClose(res.normal_vector, {1.0f, 0.0f}), "[7] Thin Wall Normal");
     }
@@ -401,7 +401,7 @@ void Test_Maths_Circle_RotatedBox() {
     {
         Vect2 boxPos = {0, 0}; Vect2 boxDim = {10, 10}; float angle = pi / 3.0f;
         Vect2 circlePos = {50, 50}; 
-        CollisionResult res = check_circle_rotated_box(circlePos, 5.0f, boxPos, boxDim, angle);
+        Collision::Manifold res = Collision::test_circle_box_rotated(circlePos, 5.0f, boxPos, boxDim, angle);
         ExpectTrue(!res.is_colliding, "[8] Far Away");
     }
 }
@@ -412,7 +412,7 @@ void Test_Maths_RotatedBox_Box() {
 
     // --- 1. Aligné (Référence) ---
     {
-        CollisionResult res = check_rotated_box_box({0,0}, {20,20}, 0, {15,0}, {20,20}, 0);
+        Collision::Manifold res = Collision::test_boxes_rotated({0,0}, {20,20}, 0, {15,0}, {20,20}, 0);
         ExpectTrue(res.is_colliding, "[1] Aligned");
         ExpectTrue(IsVecClose(res.normal_vector, {1.0f, 0.0f}), "[1] Normal");
     }
@@ -422,7 +422,7 @@ void Test_Maths_RotatedBox_Box() {
     // A: 20x2 (Horizontale). B: 2x20 (Verticale). Centre commun.
     // Overlap X: petit. Overlap Y: petit.
     {
-        CollisionResult res = check_rotated_box_box(
+        Collision::Manifold res = Collision::test_boxes_rotated(
             {0,0}, {20, 2}, 0.0f,         // Barre -
             {0,0}, {2, 20}, pi / 2.0f     // Barre | (tournée 90)
         );
@@ -436,7 +436,7 @@ void Test_Maths_RotatedBox_Box() {
     // --- 3. Diamant sur le Sol (45°) ---
     {
         // Sol (40x10) vs Cube tourné (20x20)
-        CollisionResult res = check_rotated_box_box(
+        Collision::Manifold res = Collision::test_boxes_rotated(
             {0,0}, {40,10}, 0.0f,
             {0,10}, {20,20}, pi/4.0f 
         );
@@ -448,7 +448,7 @@ void Test_Maths_RotatedBox_Box() {
     // --- 4. Presque Parallèles (1°) - Test de précision ---
     // Souvent les produits scalaires foirent quand les axes sont presque colinéaires
     {
-        CollisionResult res = check_rotated_box_box(
+        Collision::Manifold res = Collision::test_boxes_rotated(
             {0,0}, {20,20}, 0.0f,
             {15,0.5f}, {20,20}, 0.017f // ~1 degré
         );
@@ -459,7 +459,7 @@ void Test_Maths_RotatedBox_Box() {
     // --- 5. Inclusion Totale Rotative ---
     // Petite boite tournée DANS une grande boite droite
     {
-        CollisionResult res = check_rotated_box_box(
+        Collision::Manifold res = Collision::test_boxes_rotated(
             {0,0}, {100,100}, 0.0f,
             {0,0}, {10,10}, pi/3.0f
         );
@@ -474,7 +474,7 @@ void Test_Maths_RotatedBox_Box() {
         // A: 0,0 (20x20). Coin droit-haut: (10,10).
         // B: 20,20 (20x20). Coin gauche-bas: (10,10).
         // On rapproche B un tout petit peu: (19.8, 19.8)
-        CollisionResult res = check_rotated_box_box(
+        Collision::Manifold res = Collision::test_boxes_rotated(
             {0,0}, {20,20}, 0.0f,
             {19.5f, 19.5f}, {20,20}, 0.0f
         );
@@ -491,7 +491,7 @@ void Test_Maths_RotatedBox_Box() {
         // Si B à 90°, c'est une barre verticale à x=12. 
         // Largeur B devient 2. Étendue X: 11 à 13.
         // Bord droit A: 10. -> Pas de collision (11 > 10).
-        CollisionResult res = check_rotated_box_box(
+        Collision::Manifold res = Collision::test_boxes_rotated(
             {0,0}, {20,2}, 0.0f,
             {12,0}, {20,2}, pi/2.0f
         );
@@ -501,7 +501,7 @@ void Test_Maths_RotatedBox_Box() {
     // --- 8. Gigantisme (Échelle) ---
     // Une boite géante vs une minuscule. Test de précision float.
     {
-        CollisionResult res = check_rotated_box_box(
+        Collision::Manifold res = Collision::test_boxes_rotated(
             {0,0}, {10000, 10000}, 0.1f,
             {5000, 0}, {1, 1}, 0.0f
         );

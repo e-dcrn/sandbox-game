@@ -5,11 +5,15 @@
 - [x] Séparer les fonction dans PhysicsSystem,PhysicsMath et Collision
 - [x] Utiliser les namespace
 - [x] Renomer les fonctions et structures si nécéssaire
-- [ ] Créer des nouvelle fonction mathématique pour simplifier PhysicsSystem ou Collision
-2. Checker les points de contact qui peuvent encore poser problème (test)
-3. Implémenter AABB pour le partionnement spacial
+- [x] Créer des nouvelle fonction mathématique pour simplifier PhysicsSystem ou Collision
+2. [x] Implémenter AABB pour le partitionnement spacial
+3. [ ] Checker les points de contact qui peuvent encore poser problème (test)
 
 ---
+
+## Correctif : 
+- [ ] Ne pas oublier de mettre à jours l'énergie mécanique dans le mode debug
+- [ ] Réparer le RayCast
 
 ## Frotement solide :
 ### Idée rapide
@@ -18,12 +22,10 @@
 3. Limiter cette impulsion de friction par la loi de Coulomb :
    $$Friction \le ImpulsionNormale \times CoeffFriction$$
 
-## Correctif : 
-1. Ne pas oublier de mettre à jours l'énergie mécanique dans le mode debug
-2. Ajouter '''// Rayon effectif pour le broadphase (Diagonale pour les boites)
-        float r = (type == 0) ? col.radius : std::sqrt(hw*hw + hh*hh); ''' dans la structure des colision
-3. Réparer le RayCast
-4. Implémenter les polygones (attention au point de contact qui est technique)
+---
+
+## Bonus :
+- [ ] Implémenter les polygones (attention au point de contact qui est technique)
 
 ---
 

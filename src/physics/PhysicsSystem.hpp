@@ -29,7 +29,7 @@ public:
     void update(entt::registry& registry, float dt);
 
 private:
-    const float CELL_SIZE = 3000.0f; // Cellule plus large pour moins de checks
+    const float CELL_SIZE = 30.0f; // Cellule plus large pour moins de checks
     
     // TABLE DE HACHAGE FIXE (Supporte monde infini par enroulement)
     static const int HASH_SIZE = 4093; 

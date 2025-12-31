@@ -31,10 +31,9 @@ void PhysicsSystem::update(entt::registry& registry, float dt) {
         view.each([&registry, sub_dt, this](auto entity, const auto& body, auto& pos, auto& vel, const auto& col, const auto& forces) {
             if (body.inverseMass == 0 && body.inverseInertia == 0 && vel.omega == 0 && vel.x == 0 && vel.y == 0) return;
             
-            float acc_x = forces.x * body.inverseMass;
-            float acc_y = forces.y * body.inverseMass;
-            vel.x += acc_x * sub_dt;
-            vel.y += acc_y * sub_dt;
+            Vect2 acceleration = Vect2{forces.x, forces.y} * body.inverseMass;
+            vel.x += acceleration.x * sub_dt;
+            vel.y += acceleration.y * sub_dt;
             pos.theta += vel.omega * sub_dt;
             float dx = vel.x * sub_dt;
             float dy = vel.y * sub_dt;
@@ -87,12 +86,8 @@ void PhysicsSystem::sync_from_registry(entt::registry& registry) {
         int type = (col.type == ColliderType::CIRCLE) ? 0 : 1;
         float hw = col.width * 0.5f;
         float hh = col.height * 0.5f;
-        
-        // Rayon effectif pour le broadphase (Diagonale pour les boites)
-        float r = (type == 0) ? col.radius : std::sqrt(hw*hw + hh*hh); 
 
-        // On remplit le cache
-        cache.push_back({entity, pos.x, pos.y, pos.theta, vx, vy, omega, r, invMass, invInertia, restitution, type, hw, hh});
+        cache.push_back({entity, pos.x, pos.y, pos.theta, vx, vy, omega, col.radius, invMass, invInertia, restitution, type, hw, hh});
     });
 }
 
@@ -102,16 +97,11 @@ void PhysicsSystem::refresh_grid_from_cache() {
     for(int i = 0; i < (int)cache.size(); ++i) {
         const auto& p = cache[i];
 
-        float obj_hw = (p.type == 0) ? p.r : p.hw;
-        float obj_hh = (p.type == 0) ? p.r : p.hh;
+        Vect2 aabb = PhysicsMath::compute_aabb_half_dims(p.type, p.r, p.hw, p.hh, p.theta);
+        auto bounds = PhysicsMath::compute_grid_bounds(p.x, p.y, aabb.x, aabb.y, CELL_SIZE);
 
-        int startX = (int)std::floor((p.x - obj_hw) / CELL_SIZE);
-        int endX   = (int)std::floor((p.x + obj_hw) / CELL_SIZE);
-        int startY = (int)std::floor((p.y - obj_hh) / CELL_SIZE);
-        int endY   = (int)std::floor((p.y + obj_hh) / CELL_SIZE);
-
-        for (int y = startY; y <= endY; ++y) {
-            for (int x = startX; x <= endX; ++x) {
+        for (int y = bounds.startY; y <= bounds.endY; ++y) {
+            for (int x = bounds.startX; x <= bounds.endX; ++x) {
                 int hash = get_spatial_hash(x, y);
                 hash_grid[hash].particle_indices.push_back(i);
             }
@@ -125,12 +115,9 @@ void PhysicsSystem::apply_changes_to_registry(entt::registry& registry) {
         if (p.invMass > 0 || p.invInertia > 0) {
             auto& pos = registry.get<Position>(p.entity);
             auto& vel = registry.get<Velocity>(p.entity);
-            pos.x = p.x;
-            pos.y = p.y;
-            pos.theta = p.theta; 
-            vel.x = p.vx;
-            vel.y = p.vy;
-            vel.omega = p.omega;
+            
+            pos = { p.x, p.y, p.theta };
+            vel = { p.vx, p.vy, p.omega };
         }
     }
 }
@@ -138,64 +125,37 @@ void PhysicsSystem::apply_changes_to_registry(entt::registry& registry) {
 // Cette fonction ne touche PAS aux positions (pos.x), seulement aux vitesses (vel.x)
 void PhysicsSystem::apply_impulse(ParticleCache& pA, ParticleCache& pB, 
         const Vect2& normal, const Vect2& contact_point) {
-    Vect2 rA;
-    Vect2 rB;
+    Vect2 rA = contact_point - Vect2{pA.x, pA.y};
+    Vect2 rB = contact_point - Vect2{pB.x, pB.y};
 
     if (pA.type == 0) { 
-        // Le bras de levier rA pointe du centre vers le contact
-        // C'est donc la normale (qui va de A vers B) multipliée par le rayon
-        rA = { normal.x * pA.r, normal.y * pA.r };
-    } else {
-        rA = { contact_point.x - pA.x, contact_point.y - pA.y };
+        rA = normal * pA.r;
     }
-
-    // Pour un cercle (Objet B)
     if (pB.type == 0) {
-        // La normale va de A vers B, donc pour B le levier est inversé
-        rB = { -normal.x * pB.r, -normal.y * pB.r };
-    } else {
-        rB = { contact_point.x - pB.x, contact_point.y - pB.y };
+        rB = -normal * pB.r;
     }
 
-    Vect2 rotVelA = PhysicsMath::cross(pA.omega, rA);
-    Vect2 rotVelB = PhysicsMath::cross(pB.omega, rB);
+    Vect2 velA = PhysicsMath::get_velocity_at_point({pA.vx, pA.vy}, pA.omega, rA);
+    Vect2 velB = PhysicsMath::get_velocity_at_point({pB.vx, pB.vy}, pB.omega, rB);
+    Vect2 relVel = velB - velA;
 
-    Vect2 totalVelA = { pA.vx + rotVelA.x, pA.vy + rotVelA.y };
-    Vect2 totalVelB = { pB.vx + rotVelB.x, pB.vy + rotVelB.y };
-
-    Vect2 relVel = { totalVelB.x - totalVelA.x, totalVelB.y - totalVelA.y };
-
-    float velAlongNormal = relVel.x * normal.x + relVel.y * normal.y;
-
+    float velAlongNormal = PhysicsMath::dot(relVel, normal);
     if (velAlongNormal > 0) return;
 
     float e = PhysicsMath::combine_restitution(pA.restitution, pB.restitution);
-    
     if (velAlongNormal > -EPSILON && velAlongNormal < EPSILON) e = 0.0f;
+
     float numerateur = -(1.0f + e) * velAlongNormal;
-
-    float rA_cross_n = PhysicsMath::cross(rA, normal);
-    float rB_cross_n = PhysicsMath::cross(rB, normal);
-
-    float invMassSum = pA.invMass + pB.invMass;
-    float angularCompA = (rA_cross_n * rA_cross_n) * pA.invInertia;
-    float angularCompB = (rB_cross_n * rB_cross_n) * pB.invInertia;
-
-    float denominateur = invMassSum + angularCompA + angularCompB;
-
+    float denominateur = PhysicsMath::calculate_total_impulse_denominator(
+        pA.invMass, pA.invInertia, rA, 
+        pB.invMass, pB.invInertia, rB, normal);
     if (denominateur == 0.0f) return;
 
     float j = numerateur / denominateur;
+    Vect2 impulse = normal * j;
 
-    Vect2 impulse = { normal.x * j, normal.y * j };
-
-    pA.vx -= impulse.x * pA.invMass;
-    pA.vy -= impulse.y * pA.invMass;
-    pA.omega -= pA.invInertia * PhysicsMath::cross(rA, impulse); 
-
-    pB.vx += impulse.x * pB.invMass;
-    pB.vy += impulse.y * pB.invMass;
-    pB.omega += pB.invInertia * PhysicsMath::cross(rB, impulse);
+    PhysicsMath::apply_impulse_to_body(pA.vx, pA.vy, pA.omega, pA.invMass, pA.invInertia, -impulse, rA);
+    PhysicsMath::apply_impulse_to_body(pB.vx, pB.vy, pB.omega, pB.invMass, pB.invInertia, impulse, rB);
 }
 
 void PhysicsSystem::resolve_contact(ParticleCache& pA, ParticleCache& pB) {
@@ -207,8 +167,7 @@ void PhysicsSystem::resolve_contact(ParticleCache& pA, ParticleCache& pB) {
     else if (pA.type == 0 && pB.type == 1) { // Circle vs Box
         result = Collision::test_circle_box_rotated({pA.x, pA.y}, pA.r, {pB.x, pB.y}, {pB.hw * 2.0f, pB.hh * 2.0f}, pB.theta);
         // Inversion normale car A vs B
-        result.normal_vector.x *= -1.0f;
-        result.normal_vector.y *= -1.0f;
+        result.normal_vector = -result.normal_vector;
     }
     else if (pA.type == 1 && pB.type == 0) { // Box vs Circle
         result = Collision::test_circle_box_rotated({pB.x, pB.y}, pB.r, {pA.x, pA.y}, {pA.hw * 2.0f, pA.hh * 2.0f}, pA.theta);
@@ -224,44 +183,34 @@ void PhysicsSystem::resolve_contact(ParticleCache& pA, ParticleCache& pB) {
 
         if (totalMass == 0.0f && pA.invInertia == 0.0f && pB.invInertia == 0.0f) return;
 
-        Vect2 rA = { result.contact_point.x - pA.x, result.contact_point.y - pA.y };
-        Vect2 rB = { result.contact_point.x - pB.x, result.contact_point.y - pB.y };
+        Vect2 rA = result.contact_point - Vect2{pA.x, pA.y};
+        Vect2 rB = result.contact_point - Vect2{pB.x, pB.y};
 
-        Vect2 rotVelA = { -pA.omega * rA.y, pA.omega * rA.x };
-        Vect2 rotVelB = { -pB.omega * rB.y, pB.omega * rB.x };
+        Vect2 totalVelA = PhysicsMath::get_velocity_at_point({pA.vx, pA.vy}, pA.omega, rA);
+        Vect2 totalVelB = PhysicsMath::get_velocity_at_point({pB.vx, pB.vy}, pB.omega, rB);
 
-        Vect2 totalVelA = { pA.vx + rotVelA.x, pA.vy + rotVelA.y };
-        Vect2 totalVelB = { pB.vx + rotVelB.x, pB.vy + rotVelB.y };
-
-        Vect2 relVelContact = { totalVelB.x - totalVelA.x, totalVelB.y - totalVelA.y };
-        float contactVelAlongNormal = relVelContact.x * result.normal_vector.x + relVelContact.y * result.normal_vector.y;
+        Vect2 relVelContact = totalVelB - totalVelA;
+        float contactVelAlongNormal = PhysicsMath::dot(relVelContact, result.normal_vector);
 
         if (contactVelAlongNormal < -EPSILON) {
             float timeToRewind = result.depth / -contactVelAlongNormal;
             if (timeToRewind > MAX_REWIND_TIME) timeToRewind = MAX_REWIND_TIME; 
 
-            pA.x -= pA.vx * timeToRewind;
-            pA.y -= pA.vy * timeToRewind;
-            pA.theta -= pA.omega * timeToRewind;
-            pB.x -= pB.vx * timeToRewind;
-            pB.y -= pB.vy * timeToRewind;
-            pB.theta -= pB.omega * timeToRewind;
+            PhysicsMath::integrate_position(pA.x, pA.y, pA.theta, pA.vx, pA.vy, pA.omega, -timeToRewind);
+            PhysicsMath::integrate_position(pB.x, pB.y, pB.theta, pB.vx, pB.vy, pB.omega, -timeToRewind);
 
             apply_impulse(pA, pB, result.normal_vector,result.contact_point);
 
-            pA.x += pA.vx * timeToRewind;
-            pA.y += pA.vy * timeToRewind;
-            pA.theta += pA.omega * timeToRewind;
-            pB.x += pB.vx * timeToRewind;
-            pB.y += pB.vy * timeToRewind;
-            pB.theta += pB.omega * timeToRewind;
+            PhysicsMath::integrate_position(pA.x, pA.y, pA.theta, pA.vx, pA.vy, pA.omega, timeToRewind);
+            PhysicsMath::integrate_position(pB.x, pB.y, pB.theta, pB.vx, pB.vy, pB.omega, timeToRewind);
+
         } 
         else {
-            float move = result.depth / totalMass;
-            pA.x -= result.normal_vector.x * invMassA * move;
-            pA.y -= result.normal_vector.y * invMassA * move;
-            pB.x += result.normal_vector.x * invMassB * move;
-            pB.y += result.normal_vector.y * invMassB * move;
+            Vect2 correction = result.normal_vector * (result.depth / totalMass);
+            pA.x -= correction.x * invMassA;
+            pA.y -= correction.y * invMassA;
+            pB.x += correction.x * invMassB;
+            pB.y += correction.y * invMassB;
 
             apply_impulse(pA, pB, result.normal_vector,result.contact_point);
         }
@@ -275,8 +224,8 @@ void PhysicsSystem::solve_collisions() {
         ParticleCache& pA = cache[i];
         if (pA.invMass == 0 && pA.invInertia == 0) continue; // Les murs ne cherchent pas
 
-        int cx = (int)std::floor(pA.x / CELL_SIZE);
-        int cy = (int)std::floor(pA.y / CELL_SIZE);
+        int cx, cy;
+        PhysicsMath::world_to_grid(pA.x, pA.y, CELL_SIZE, cx, cy);
 
         // Voisins 3x3
         for(int dy = -1; dy <= 1; ++dy) {
@@ -354,8 +303,8 @@ void PhysicsSystem::apply_continuous_movement(Position& pos, Velocity& vel, cons
     pos.x += dx * safe_t;
     pos.y += dy * safe_t;
     
-    float dot = vel.x * hit.normal.x + vel.y * hit.normal.y;
-    
+    float dot = PhysicsMath::dot({vel.x, vel.y}, hit.normal);
+
     float restitution_factor = 1.0f + body.restitution * 0.5f;
     float j = -restitution_factor * dot; 
     

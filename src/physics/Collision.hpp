@@ -21,11 +21,10 @@ namespace Collision {
     };
     
     inline Manifold test_circles(Vect2 centerA, float radiusA, Vect2 centerB, float radiusB) {
-        float distX = centerB.x - centerA.x;
-        float distY = centerB.y - centerA.y;
-        float required_distance = radiusA + radiusB;
+        Vect2 delta = centerB - centerA;
+        float square_dist = PhysicsMath::dot(delta, delta);
         
-        float square_dist = (distX * distX) + (distY * distY);
+        float required_distance = radiusA + radiusB;
         float required_square = required_distance * required_distance;
         
         if (square_dist < required_square) {
@@ -34,14 +33,10 @@ namespace Collision {
     
             if (dist == 0.0f) {
                 normal = {0.0f, 1.0f};
-                return { true, normal, required_distance, {centerA.x, centerA.y + radiusA}}; 
+                return { true, normal, required_distance, centerA + Vect2{0.0f, radiusA}}; 
             }
-            float inverse_dist = 1.0f / dist;
-            normal = {distX * inverse_dist, distY * inverse_dist};
-            Vect2 contact = {
-                centerA.x + normal.x * radiusA,
-                centerA.y + normal.y * radiusA
-            };
+            normal = PhysicsMath::normalize(delta);
+            Vect2 contact = centerA + normal * radiusA;
     
             return {
                 true,
@@ -54,58 +49,51 @@ namespace Collision {
     }
     
     inline Manifold test_circle_box(Vect2 circle_center, float circle_radius, Vect2 box_center, Vect2 box_dimensions) {
-        float dx = circle_center.x - box_center.x;
-        float dy = circle_center.y - box_center.y;
+        Vect2 delta = circle_center - box_center;
         float halfW = box_dimensions.x * 0.5f;
         float halfH = box_dimensions.y * 0.5f;
     
-        float closestX = std::clamp(dx, -halfW, halfW);
-        float closestY = std::clamp(dy, -halfH, halfH);
+        float closestX = std::clamp(delta.x, -halfW, halfW);
+        float closestY = std::clamp(delta.y, -halfH, halfH);
     
-        bool inside = (dx == closestX && dy == closestY);
+        bool inside = (delta.x == closestX && delta.y == closestY);
     
         if (inside) {
-            float distToEdgeX = halfW - std::abs(dx);
-            float distToEdgeY = halfH - std::abs(dy);
+            float distToEdgeX = halfW - std::abs(delta.x);
+            float distToEdgeY = halfH - std::abs(delta.y);
     
             Vect2 normal;
             float depth;
             Vect2 contact;
     
             if (distToEdgeX < distToEdgeY) {
-                float sign = (dx > 0) ? 1.0f : -1.0f;
-                normal = { (dx > 0) ? 1.0f : -1.0f, 0.0f };
+                float sign = (delta.x > 0) ? 1.0f : -1.0f;
+                normal = { (delta.x > 0) ? 1.0f : -1.0f, 0.0f };
                 depth = distToEdgeX + circle_radius;
-                contact = { box_center.x + (halfW * sign), box_center.y + dy };
+                contact = box_center + Vect2{ halfW * sign, delta.y };
             } 
             else {
-                float sign = (dy > 0) ? 1.0f : -1.0f;
-                normal = { 0.0f, (dy > 0) ? 1.0f : -1.0f };
+                float sign = (delta.y > 0) ? 1.0f : -1.0f;
+                normal = { 0.0f, (delta.y > 0) ? 1.0f : -1.0f };
                 depth = distToEdgeY + circle_radius;
-                contact = { box_center.x + dx, box_center.y + (halfH * sign) };
+                contact = box_center + Vect2{ delta.x, halfH * sign };
             }
     
             return { true, normal, depth, contact};
         }
         else {
-            Vect2 contact = { box_center.x + closestX, box_center.y + closestY };
+            Vect2 contact = box_center + Vect2{closestX, closestY};
     
-            float diffX = dx - closestX;
-            float diffY = dy - closestY;
-            float distSq = diffX * diffX + diffY * diffY;
+            Vect2 diff = delta - Vect2{closestX, closestY};
+            float distSq = PhysicsMath::dot(diff, diff);
     
             if (distSq > circle_radius * circle_radius) {
                 return {false, {0.0f, 0.0f}, 0.0f, {0.0f, 0.0f}};
             }
     
             float dist = std::sqrt(distSq);
-            Vect2 normal;
-            
-            if (dist == 0.0f) {
-                normal = {0.0f, 1.0f}; 
-            } else {
-                normal = { diffX / dist, diffY / dist };
-            }
+            Vect2 normal = PhysicsMath::normalize(diff);
+            if (dist == 0.0f) normal = {0.0f, 1.0f};
     
             return { true, normal, circle_radius - dist, contact};
         }
@@ -113,7 +101,7 @@ namespace Collision {
     
     inline Manifold test_circle_box_rotated(Vect2 circlePos, float radius, 
                                                     Vect2 boxPos, Vect2 boxDim, float boxAngle) {
-        Vect2 relPos = { circlePos.x - boxPos.x, circlePos.y - boxPos.y };
+        Vect2 relPos = circlePos - boxPos;
         
         Vect2 localCirclePos = PhysicsMath::rotate(relPos, -boxAngle);
     
@@ -121,9 +109,7 @@ namespace Collision {
     
         if (localResult.is_colliding) {
             Vect2 worldNormal = PhysicsMath::rotate(localResult.normal_vector, boxAngle);
-            Vect2 worldContact = PhysicsMath::rotate(localResult.contact_point, boxAngle);
-            worldContact.x += boxPos.x;
-            worldContact.y += boxPos.y;
+            Vect2 worldContact = PhysicsMath::rotate(localResult.contact_point, boxAngle) + boxPos;
     
             return {
                 true,
@@ -142,10 +128,9 @@ namespace Collision {
         float halfW_B = dimB.x * 0.5f;
         float halfH_B = dimB.y * 0.5f;
     
-        float deltaX = centerB.x - centerA.x;
-        float deltaY = centerB.y - centerA.y;
-        float overlapX = halfW_A + halfW_B - std::abs(deltaX);
-        float overlapY = halfH_A + halfH_B - std::abs(deltaY);
+        Vect2 delta = centerB - centerA;
+        float overlapX = halfW_A + halfW_B - std::abs(delta.x);
+        float overlapY = halfH_A + halfH_B - std::abs(delta.y);
     
         if (overlapX > 0 && overlapY > 0) {
             float minXA = centerA.x - halfW_A;
@@ -163,22 +148,18 @@ namespace Collision {
             float intersectMinY = std::max(minYA, minYB);
             float intersectMaxY = std::min(maxYA, maxYB);
     
-            Vect2 contact = {
-                (intersectMinX + intersectMaxX) * 0.5f,
-                (intersectMinY + intersectMaxY) * 0.5f
-            };
-    
+            Vect2 contact = (Vect2{intersectMinX, intersectMinY} + Vect2{intersectMaxX, intersectMaxY}) * 0.5f;
             if (overlapX < overlapY) {
                 return {
                     true,
-                    { (deltaX < 0) ? -1.0f : 1.0f, 0.0f },
+                    { (delta.x < 0) ? -1.0f : 1.0f, 0.0f },
                     overlapX,
                     contact
                 };
             } else {
                 return {
                     true,
-                    { 0.0f, (deltaY < 0) ? -1.0f : 1.0f },
+                    { 0.0f, (delta.y < 0) ? -1.0f : 1.0f },
                     overlapY,
                     contact
                 };
@@ -193,14 +174,8 @@ namespace Collision {
         // Coins locaux
         Vect2 corners[4] = { {-hw, -hh}, {hw, -hh}, {hw, hh}, {-hw, hh} };
         
-        float c = std::cos(angle);
-        float s = std::sin(angle);
-    
         for(int i=0; i<4; i++) {
-            // Rotation + Translation
-            float rx = corners[i].x * c - corners[i].y * s;
-            float ry = corners[i].x * s + corners[i].y * c;
-            vertices[i] = Vect2{ center.x + rx, center.y + ry };
+            vertices[i] = center + PhysicsMath::rotate(corners[i], angle);
         }
     }
     
@@ -224,11 +199,11 @@ namespace Collision {
         // (2 axes pour A, 2 axes pour B)
         Vect2 axes[4];
         // Axes de A (Haut et Droite relatifs)
-        axes[0] = PhysicsMath::normalize({vertsA[1].x - vertsA[0].x, vertsA[1].y - vertsA[0].y}); 
-        axes[1] = PhysicsMath::normalize({vertsA[1].x - vertsA[2].x, vertsA[1].y - vertsA[2].y}); 
+        axes[0] = PhysicsMath::normalize(vertsA[1] - vertsA[0]); 
+        axes[1] = PhysicsMath::normalize(vertsA[1] - vertsA[2]);
         // Axes de B
-        axes[2] = PhysicsMath::normalize({vertsB[1].x - vertsB[0].x, vertsB[1].y - vertsB[0].y}); 
-        axes[3] = PhysicsMath::normalize({vertsB[1].x - vertsB[2].x, vertsB[1].y - vertsB[2].y}); 
+        axes[2] = PhysicsMath::normalize(vertsB[1] - vertsB[0]);
+        axes[3] = PhysicsMath::normalize(vertsB[1] - vertsB[2]); 
     
         float minOverlap = std::numeric_limits<float>::max();
         Vect2 smallestAxis = {0, 0};
@@ -256,9 +231,9 @@ namespace Collision {
         }
     
         // Assurer que la normale pointe de A vers B
-        Vect2 dir = { posB.x - posA.x, posB.y - posA.y };
+        Vect2 dir = posB - posA;
         if (PhysicsMath::dot(smallestAxis, dir) < 0) {
-            smallestAxis = { -smallestAxis.x, -smallestAxis.y };
+            smallestAxis = -smallestAxis;
         }
     
         // --- Calcul du point de contact (Approximation : Vertex le plus profond) ---
@@ -269,7 +244,7 @@ namespace Collision {
         // On teste les sommets de B contre la normale (qui pointe vers B)
         // Le sommet le plus "en arrière" par rapport à la normale est le candidat
         for(const auto& v : vertsB) {
-            float proj = PhysicsMath::dot(v, { -smallestAxis.x, -smallestAxis.y }); // Projection inverse
+            float proj = PhysicsMath::dot(v, -smallestAxis); // Projection inverse
             if(proj < minProj) {
                 minProj = proj;
                 contactPoint = v;
@@ -293,15 +268,14 @@ namespace Collision {
         float inv_dy = (dy != 0.0f) ? 1.0f / dy : std::numeric_limits<float>::max();
     
         // Calcul des bornes de la boîte (centrée sur bx, by)
-        float min_x = bx - bw * 0.5f;
-        float max_x = bx + bw * 0.5f;
-        float min_y = by - bh * 0.5f;
-        float max_y = by + bh * 0.5f;
-    
-        float t1 = (min_x - ox) * inv_dx;
-        float t2 = (max_x - ox) * inv_dx;
-        float t3 = (min_y - oy) * inv_dy;
-        float t4 = (max_y - oy) * inv_dy;
+        Vect2 half_dim = Vect2{bw, bh} * 0.5f;
+        Vect2 b_min = Vect2{bx, by} - half_dim;
+        Vect2 b_max = Vect2{bx, by} + half_dim;
+
+        float t1 = (b_min.x - ox) * inv_dx;
+        float t2 = (b_max.x - ox) * inv_dx;
+        float t3 = (b_min.y - oy) * inv_dy;
+        float t4 = (b_max.y - oy) * inv_dy;
     
         float tmin = std::max(std::min(t1, t2), std::min(t3, t4));
         float tmax = std::min(std::max(t1, t2), std::max(t3, t4));
@@ -326,19 +300,12 @@ namespace Collision {
                                 float cx, float cy, float radius) {
         RaycastHit result;
     
-        // Vecteur du Rayon vers le Centre du Cercle (f = origin - center)
-        float fx = ox - cx;
-        float fy = oy - cy;
-    
-        // Equation quadratique: a*t^2 + b*t + c = 0
-        // a = D.D (Longueur du vecteur vitesse au carré)
-        float a = dx * dx + dy * dy;
-        
-        // b = 2 * (F . D)
-        float b = 2.0f * (fx * dx + fy * dy);
-        
-        // c = (F . F) - r^2
-        float c = (fx * fx + fy * fy) - (radius * radius);
+        Vect2 f = Vect2{ox, oy} - Vect2{cx, cy};
+        Vect2 d = {dx, dy};
+
+        float a = PhysicsMath::dot(d, d);
+        float b = 2.0f * PhysicsMath::dot(f, d);
+        float c = PhysicsMath::dot(f, f) - (radius * radius);
     
         float discriminant = b * b - 4 * a * c;
     
@@ -357,18 +324,8 @@ namespace Collision {
         result.t = t1;
     
         // Calcul de la normale (Point d'impact - Centre Cercle, normalisé)
-        float hit_x = ox + dx * result.t;
-        float hit_y = oy + dy * result.t;
-        
-        float nx = hit_x - cx;
-        float ny = hit_y - cy;
-        // Normalisation
-        float len = std::sqrt(nx*nx + ny*ny);
-        if (len > 0) {
-            result.normal.x = nx / len;
-            result.normal.y = ny / len;
-        }
-        
+        Vect2 hit_point = Vect2{ox, oy} + Vect2{dx, dy} * result.t;
+        result.normal = PhysicsMath::normalize(hit_point - Vect2{cx, cy});
     
         return result;
     }
