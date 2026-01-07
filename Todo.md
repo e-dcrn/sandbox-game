@@ -8,12 +8,8 @@
 - [x] Créer des nouvelle fonction mathématique pour simplifier PhysicsSystem ou Collision
 2. [x] Implémenter AABB pour le partitionnement spacial
 3. [ ] Checker les points de contact qui peuvent encore poser problème (test)
-
----
-
-## Correctif : 
-- [ ] Ne pas oublier de mettre à jours l'énergie mécanique dans le mode debug
-- [ ] Réparer le RayCast
+4. [ ] Ne pas oublier de mettre à jours l'énergie mécanique dans le mode debug
+5. [ ] Réparer le RayCast
 
 ## Frotement solide :
 ### Idée rapide

@@ -9,7 +9,7 @@ namespace Factory {
 
     inline entt::entity create_ball(entt::registry& registry, float x, float y) {
         return EntityBuilder(registry)
-            .asCircle(15.0f)
+            .asBox(30, 30)
             .at(x, y)
             .withColor(255, 0, 0)
             .withMass(1.0f)          // Masse 1kg -> Inertie calculée auto

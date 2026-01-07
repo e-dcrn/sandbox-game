@@ -190,72 +190,67 @@ namespace Collision {
     }
     
     inline Manifold test_boxes_rotated(Vect2 posA, Vect2 dimA, float angleA,
-                                                 Vect2 posB, Vect2 dimB, float angleB) {
+        Vect2 posB, Vect2 dimB, float angleB) {
         std::array<Vect2, 4> vertsA{}, vertsB{};
         compute_box_vertices(posA, dimA, angleA, vertsA);
         compute_box_vertices(posB, dimB, angleB, vertsB);
-    
-        // Les axes à tester sont les normales des faces des deux boîtes
-        // (2 axes pour A, 2 axes pour B)
+        
         Vect2 axes[4];
-        // Axes de A (Haut et Droite relatifs)
-        axes[0] = PhysicsMath::normalize(vertsA[1] - vertsA[0]); 
+        axes[0] = PhysicsMath::normalize(vertsA[1] - vertsA[0]);
         axes[1] = PhysicsMath::normalize(vertsA[1] - vertsA[2]);
-        // Axes de B
         axes[2] = PhysicsMath::normalize(vertsB[1] - vertsB[0]);
-        axes[3] = PhysicsMath::normalize(vertsB[1] - vertsB[2]); 
-    
+        axes[3] = PhysicsMath::normalize(vertsB[1] - vertsB[2]);
+
         float minOverlap = std::numeric_limits<float>::max();
         Vect2 smallestAxis = {0, 0};
-    
+        int bestAxisIndex = -1; 
+
         for (int i = 0; i < 4; i++) {
             float minA, maxA, minB, maxB;
             project_on_axis(vertsA, axes[i], minA, maxA);
             project_on_axis(vertsB, axes[i], minB, maxB);
-    
-            float overlap1 = maxA - minB; // Distance pour sortir par la droite
-            float overlap2 = maxB - minA; // Distance pour sortir par la gauche
-    
-            // Si l'une des distances est négative, on ne se touche pas
-            if (overlap1 < 0 || overlap2 < 0) {
-                return { false, {0,0}, 0, {0,0} };
-            }
-    
-            // On prend la plus petite des deux distances (le chemin le plus court pour sortir)
+            float overlap1 = maxA - minB;
+            float overlap2 = maxB - minA;
+
+            if (overlap1 < 0 || overlap2 < 0) return { false, {0,0}, 0, {0,0} };
+
             float overlap = std::min(overlap1, overlap2);
-    
+
             if (overlap < minOverlap) {
                 minOverlap = overlap;
                 smallestAxis = axes[i];
+                bestAxisIndex = i; // On sauvegarde l'index
             }
         }
-    
-        // Assurer que la normale pointe de A vers B
+
         Vect2 dir = posB - posA;
+        
         if (PhysicsMath::dot(smallestAxis, dir) < 0) {
             smallestAxis = -smallestAxis;
         }
-    
-        // --- Calcul du point de contact (Approximation : Vertex le plus profond) ---
-        // On cherche quel vertex de B est le plus "à l'intérieur" de A (selon la normale inverse)
         Vect2 contactPoint = {0,0};
         float minProj = std::numeric_limits<float>::max();
-        
-        // On teste les sommets de B contre la normale (qui pointe vers B)
-        // Le sommet le plus "en arrière" par rapport à la normale est le candidat
-        for(const auto& v : vertsB) {
-            float proj = PhysicsMath::dot(v, -smallestAxis); // Projection inverse
-            if(proj < minProj) {
-                minProj = proj;
-                contactPoint = v;
+        const std::array<Vect2, 4>* vertsToTest;
+        Vect2 projectionAxis; // Direction dans laquelle on cherche le point le plus "profond"
+        if (bestAxisIndex < 2) {
+            vertsToTest = &vertsB;
+            projectionAxis = -smallestAxis;
+        } else {
+            vertsToTest = &vertsA;
+            projectionAxis = smallestAxis;
+        }
+        if (bestAxisIndex < 2) {
+            for(const auto& v : *vertsToTest) {
+                float proj = PhysicsMath::dot(v, smallestAxis);
+                if(proj < minProj) { minProj = proj; contactPoint = v; }
+            }
+        } else {
+            float maxProj = std::numeric_limits<float>::lowest();
+            for(const auto& v : *vertsToTest) {
+                float proj = PhysicsMath::dot(v, smallestAxis);
+                if(proj > maxProj) { maxProj = proj; contactPoint = v; }
             }
         }
-        // Note : Pour une vraie précision physique (Edge-Edge), il faudrait du Clipping (Sutherland-Hodgman)
-        // Mais "Deepest Vertex" suffit souvent pour des cubes simples.
-        
-        // On vérifie aussi si un sommet de A est dans B (si c'est A qui rentre dans B)
-        // ... (Code simplifié ici pour ne pas exploser la taille du fichier)
-    
         return { true, smallestAxis, minOverlap, contactPoint };
     }
     

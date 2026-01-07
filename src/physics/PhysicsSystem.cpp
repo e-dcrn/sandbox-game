@@ -128,12 +128,8 @@ void PhysicsSystem::apply_impulse(ParticleCache& pA, ParticleCache& pB,
     Vect2 rA = contact_point - Vect2{pA.x, pA.y};
     Vect2 rB = contact_point - Vect2{pB.x, pB.y};
 
-    if (pA.type == 0) { 
-        rA = normal * pA.r;
-    }
-    if (pB.type == 0) {
-        rB = -normal * pB.r;
-    }
+    if (pA.type == 0) rA = normal * pA.r;
+    if (pB.type == 0) rB = -normal * pB.r;
 
     Vect2 velA = PhysicsMath::get_velocity_at_point({pA.vx, pA.vy}, pA.omega, rA);
     Vect2 velB = PhysicsMath::get_velocity_at_point({pB.vx, pB.vy}, pB.omega, rB);
