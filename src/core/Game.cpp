@@ -79,9 +79,9 @@ bool Game::init() {
     Factory::create_wall(registry, 899.0f, 300.0f, 100.0f, 500.0f);
 
 
-    Factory::create_ball(registry, 500.0f, 500.0f);
+    // Factory::create_ball(registry, 500.0f, 500.0f);
     // Factory::create_ball(registry, 500.0f, 470.0f);
-    // Factory::create_balls_in_circle(registry, 500.0f, 300.0f, 200.0f, 2);
+    Factory::create_balls_in_circle(registry, 500.0f, 300.0f, 200.0f, 2);
     // Factory::create_spinner(registry, 400.0f, 300.0f, 200.0f, 20.0f, 90.0f);
 
     is_running = true;

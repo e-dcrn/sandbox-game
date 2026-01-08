@@ -128,6 +128,7 @@ void PhysicsSystem::apply_impulse(ParticleCache& pA, ParticleCache& pB,
     Vect2 rA = contact_point - Vect2{pA.x, pA.y};
     Vect2 rB = contact_point - Vect2{pB.x, pB.y};
 
+    // Ton fix pour les cercles (Conservation du bras de levier nul)
     if (pA.type == 0) rA = normal * pA.r;
     if (pB.type == 0) rB = -normal * pB.r;
 
@@ -139,7 +140,15 @@ void PhysicsSystem::apply_impulse(ParticleCache& pA, ParticleCache& pB,
     if (velAlongNormal > 0) return;
 
     float e = PhysicsMath::combine_restitution(pA.restitution, pB.restitution);
-    if (velAlongNormal > -EPSILON && velAlongNormal < EPSILON) e = 0.0f;
+    
+    // --- MODIFICATION ICI : SEUIL DE RESTITUTION ---
+    // Si la vitesse d'impact est faible (ex: juste posé par gravité), on tue le rebond.
+    // EPSILON est trop petit (1e-5). Il faut une valeur liée à la gravité (ex: 10.0 ou 20.0)
+    const float RESTITUTION_THRESHOLD = 20.0f; 
+    if (std::abs(velAlongNormal) < RESTITUTION_THRESHOLD) {
+        e = 0.0f;
+    }
+    // -----------------------------------------------
 
     float numerateur = -(1.0f + e) * velAlongNormal;
     float denominateur = PhysicsMath::calculate_total_impulse_denominator(
@@ -155,20 +164,20 @@ void PhysicsSystem::apply_impulse(ParticleCache& pA, ParticleCache& pB,
 }
 
 void PhysicsSystem::resolve_contact(ParticleCache& pA, ParticleCache& pB) {
-    Collision::Manifold result = {false, {0,0}, 0, {0,0}};
+    Collision::Manifold result = {false, {0,0}, 0, 0, {{0,0}, {0,0}}};
 
-    if (pA.type == 0 && pB.type == 0) { // Circle vs Circle
+    // --- (Détection collisions inchangée) ---
+    if (pA.type == 0 && pB.type == 0) { 
         result = Collision::test_circles({pA.x, pA.y}, pA.r, {pB.x, pB.y}, pB.r);
     }
-    else if (pA.type == 0 && pB.type == 1) { // Circle vs Box
+    else if (pA.type == 0 && pB.type == 1) { 
         result = Collision::test_circle_box_rotated({pA.x, pA.y}, pA.r, {pB.x, pB.y}, {pB.hw * 2.0f, pB.hh * 2.0f}, pB.theta);
-        // Inversion normale car A vs B
         result.normal_vector = -result.normal_vector;
     }
-    else if (pA.type == 1 && pB.type == 0) { // Box vs Circle
+    else if (pA.type == 1 && pB.type == 0) { 
         result = Collision::test_circle_box_rotated({pB.x, pB.y}, pB.r, {pA.x, pA.y}, {pA.hw * 2.0f, pA.hh * 2.0f}, pA.theta);
     }
-    else { // Box vs Box
+    else { 
         result = Collision::test_boxes_rotated({pA.x, pA.y}, {pA.hw * 2.0f, pA.hh * 2.0f}, pA.theta, {pB.x, pB.y}, {pB.hw * 2.0f, pB.hh * 2.0f}, pB.theta);
     }
 
@@ -179,36 +188,57 @@ void PhysicsSystem::resolve_contact(ParticleCache& pA, ParticleCache& pB) {
 
         if (totalMass == 0.0f && pA.invInertia == 0.0f && pB.invInertia == 0.0f) return;
 
-        Vect2 rA = result.contact_point - Vect2{pA.x, pA.y};
-        Vect2 rB = result.contact_point - Vect2{pB.x, pB.y};
+        // Estimation de la vitesse d'impact sur le premier point pour choisir la stratégie
+        Vect2 mainContact = result.contacts[0];
+        Vect2 rA = mainContact - Vect2{pA.x, pA.y};
+        Vect2 rB = mainContact - Vect2{pB.x, pB.y};
 
-        Vect2 totalVelA = PhysicsMath::get_velocity_at_point({pA.vx, pA.vy}, pA.omega, rA);
-        Vect2 totalVelB = PhysicsMath::get_velocity_at_point({pB.vx, pB.vy}, pB.omega, rB);
+        Vect2 velA = PhysicsMath::get_velocity_at_point({pA.vx, pA.vy}, pA.omega, rA);
+        Vect2 velB = PhysicsMath::get_velocity_at_point({pB.vx, pB.vy}, pB.omega, rB);
+        Vect2 relVel = velB - velA;
+        float contactVelAlongNormal = PhysicsMath::dot(relVel, result.normal_vector);
 
-        Vect2 relVelContact = totalVelB - totalVelA;
-        float contactVelAlongNormal = PhysicsMath::dot(relVelContact, result.normal_vector);
-
+        // --- BRANCHE 1 : HAUTE VITESSE (CCD / REWIND) ---
         if (contactVelAlongNormal < -EPSILON) {
             float timeToRewind = result.depth / -contactVelAlongNormal;
             if (timeToRewind > MAX_REWIND_TIME) timeToRewind = MAX_REWIND_TIME; 
 
+            // 1. On rembobine
             PhysicsMath::integrate_position(pA.x, pA.y, pA.theta, pA.vx, pA.vy, pA.omega, -timeToRewind);
             PhysicsMath::integrate_position(pB.x, pB.y, pB.theta, pB.vx, pB.vy, pB.omega, -timeToRewind);
 
-            apply_impulse(pA, pB, result.normal_vector,result.contact_point);
+            // 2. On applique l'impulsion sur TOUS les points (Correctif Multi-points)
+            for (int i = 0; i < result.contact_count; ++i) {
+                apply_impulse(pA, pB, result.normal_vector, result.contacts[i]);
+            }
 
+            // 3. On avance à nouveau
             PhysicsMath::integrate_position(pA.x, pA.y, pA.theta, pA.vx, pA.vy, pA.omega, timeToRewind);
             PhysicsMath::integrate_position(pB.x, pB.y, pB.theta, pB.vx, pB.vy, pB.omega, timeToRewind);
-
         } 
+        // --- BRANCHE 2 : REPOS / EMPILEMENT (SLOP + BAUMGARTE) ---
         else {
-            Vect2 correction = result.normal_vector * (result.depth / totalMass);
-            pA.x -= correction.x * invMassA;
-            pA.y -= correction.y * invMassA;
-            pB.x += correction.x * invMassB;
-            pB.y += correction.y * invMassB;
+            const float SLOP = 0.5f;
+            const float BAUMGARTE = 0.2f;
 
-            apply_impulse(pA, pB, result.normal_vector,result.contact_point);
+            for (int i = 0; i < result.contact_count; ++i) {
+                Vect2 cp = result.contacts[i];
+
+                // A. Correction de Position (Slop)
+                // On divise par le nombre de contacts pour ne pas pousser 2 fois trop fort
+                float penetration = std::max(0.0f, result.depth - SLOP);
+                if (penetration > 0.0f) {
+                    float correctionMag = (penetration / totalMass) * BAUMGARTE;
+                    correctionMag /= (float)result.contact_count; 
+
+                    Vect2 correction = result.normal_vector * correctionMag;
+                    pA.x -= correction.x * invMassA; pA.y -= correction.y * invMassA;
+                    pB.x += correction.x * invMassB; pB.y += correction.y * invMassB;
+                }
+
+                // B. Impulsion (Rebond + Friction)
+                apply_impulse(pA, pB, result.normal_vector, cp);
+            }
         }
     }
 }
