@@ -42,8 +42,9 @@ private:
     void apply_changes_to_registry(entt::registry& registry);
 
     ForceRegistry force_registry;
-    static void apply_impulse(ParticleCache& pA, ParticleCache& pB,
-         const Vect2& normal, const Vect2& contact_point);
+    static Vect2 calculate_impulse_vector(const ParticleCache& pA, const ParticleCache& pB, 
+        const Vect2& normal, const Vect2& contact_point);
+    static void solve_sequential_impulse(ParticleCache& pA, ParticleCache& pB, const Collision::Manifold& result);
     static void resolve_contact(ParticleCache& pA, ParticleCache& pB);
     void solve_collisions();
     Collision::RaycastHit sweep_static_collisions(entt::registry& registry, 

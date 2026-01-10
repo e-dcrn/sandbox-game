@@ -122,13 +122,14 @@ void PhysicsSystem::apply_changes_to_registry(entt::registry& registry) {
     }
 }
 
-// Cette fonction ne touche PAS aux positions (pos.x), seulement aux vitesses (vel.x)
-void PhysicsSystem::apply_impulse(ParticleCache& pA, ParticleCache& pB, 
-        const Vect2& normal, const Vect2& contact_point) {
+// Retourne le vecteur d'impulsion (J * normale) sans l'appliquer
+Vect2 PhysicsSystem::calculate_impulse_vector(const ParticleCache& pA, const ParticleCache& pB, 
+        const Vect2& normal, const Vect2& contact_point){
+    
     Vect2 rA = contact_point - Vect2{pA.x, pA.y};
     Vect2 rB = contact_point - Vect2{pB.x, pB.y};
 
-    // Ton fix pour les cercles (Conservation du bras de levier nul)
+    // Ton fix pour les cercles
     if (pA.type == 0) rA = normal * pA.r;
     if (pB.type == 0) rB = -normal * pB.r;
 
@@ -137,36 +138,119 @@ void PhysicsSystem::apply_impulse(ParticleCache& pA, ParticleCache& pB,
     Vect2 relVel = velB - velA;
 
     float velAlongNormal = PhysicsMath::dot(relVel, normal);
-    if (velAlongNormal > 0) return;
+    
+    // Si les objets s'éloignent, aucune impulsion requise
+    if (velAlongNormal > 0) return {0.0f, 0.0f};
 
     float e = PhysicsMath::combine_restitution(pA.restitution, pB.restitution);
-    
-    // --- MODIFICATION ICI : SEUIL DE RESTITUTION ---
-    // Si la vitesse d'impact est faible (ex: juste posé par gravité), on tue le rebond.
-    // EPSILON est trop petit (1e-5). Il faut une valeur liée à la gravité (ex: 10.0 ou 20.0)
-    const float RESTITUTION_THRESHOLD = 20.0f; 
-    if (std::abs(velAlongNormal) < RESTITUTION_THRESHOLD) {
-        e = 0.0f;
-    }
-    // -----------------------------------------------
 
     float numerateur = -(1.0f + e) * velAlongNormal;
     float denominateur = PhysicsMath::calculate_total_impulse_denominator(
         pA.invMass, pA.invInertia, rA, 
         pB.invMass, pB.invInertia, rB, normal);
-    if (denominateur == 0.0f) return;
+
+    if (denominateur == 0.0f) return {0.0f, 0.0f};
 
     float j = numerateur / denominateur;
-    Vect2 impulse = normal * j;
+    
+    // On retourne le vecteur impulsion complet
+    return normal * j;
+}
 
-    PhysicsMath::apply_impulse_to_body(pA.vx, pA.vy, pA.omega, pA.invMass, pA.invInertia, -impulse, rA);
-    PhysicsMath::apply_impulse_to_body(pB.vx, pB.vy, pB.omega, pB.invMass, pB.invInertia, impulse, rB);
+void PhysicsSystem::solve_sequential_impulse(ParticleCache& pA, ParticleCache& pB, const Collision::Manifold& result) {
+    float simVX_A = pA.vx, simVY_A = pA.vy; // On copie Vitesse Linéaire
+    float simVX_B = pB.vx, simVY_B = pB.vy; 
+    
+    // IMPORTANT : On copie Omega, mais on ne le modifiera PAS dans la boucle simulation
+    // pour éviter que le point 1 fasse croire au point 2 que la boite tourne déjà.
+    const float constantOmega_A = pA.omega; 
+    const float constantOmega_B = pB.omega;
+
+    Vect2 accumulatedImpulse = {0.0f, 0.0f};
+    float accumulatedTorqueA = 0.0f;
+    float accumulatedTorqueB = 0.0f;
+
+    for (int i = 0; i < result.contact_count; ++i) {
+        Vect2 cp = result.contacts[i];
+        Vect2 rA = cp - Vect2{pA.x, pA.y};
+        Vect2 rB = cp - Vect2{pB.x, pB.y};
+        
+        if (pA.type == 0) rA = result.normal_vector * pA.r;
+        if (pB.type == 0) rB = -result.normal_vector * pB.r;
+
+        // On utilise constantOmega ici (la valeur du début de frame)
+        Vect2 velA = PhysicsMath::get_velocity_at_point({simVX_A, simVY_A}, constantOmega_A, rA);
+        Vect2 velB = PhysicsMath::get_velocity_at_point({simVX_B, simVY_B}, constantOmega_B, rB);
+        Vect2 relVel = velB - velA;
+        
+        float velAlongNormal = PhysicsMath::dot(relVel, result.normal_vector);
+
+        if (velAlongNormal < 0) { 
+            float e = PhysicsMath::combine_restitution(pA.restitution, pB.restitution);
+            if (std::abs(velAlongNormal) < 20.0f) e = 0.0f; 
+
+            float numerateur = -(1.0f + e) * velAlongNormal;
+            float denominateur = PhysicsMath::calculate_total_impulse_denominator(
+                pA.invMass, pA.invInertia, rA, pB.invMass, pB.invInertia, rB, result.normal_vector);
+
+            if (denominateur > 0.0f) {
+                float j = numerateur / denominateur;
+                Vect2 impulse = result.normal_vector * j;
+
+                // 1. Accumulation réelle (Pour l'application finale)
+                accumulatedImpulse.x += impulse.x;
+                accumulatedImpulse.y += impulse.y;
+                accumulatedTorqueA += (rA.x * (-impulse.y) - rA.y * (-impulse.x));
+                accumulatedTorqueB += (rB.x * impulse.y - rB.y * impulse.x);
+
+                // 2. Application virtuelle PARTIELLE
+                // On met à jour VX/VY pour éviter l'explosion d'énergie (double rebond)
+                // MAIS ON NE TOUCHE PAS À OMEGA.
+                
+                // Note : Je décompose ton appel apply_impulse_to_body pour ne pas toucher Omega
+                // Simulation A
+                simVX_A -= impulse.x * pA.invMass;
+                simVY_A -= impulse.y * pA.invMass;
+                // simOmega_A n'est pas touché !
+
+                // Simulation B
+                simVX_B += impulse.x * pB.invMass;
+                simVY_B += impulse.y * pB.invMass;
+                // simOmega_B n'est pas touché !
+            }
+        }
+    }
+
+    // --- KILL D'ARRONDI SUR LA SOMME TOTALE ---
+    const float ROUNDING_KILL_THRESHOLD = 0.5f; 
+    if (std::abs(accumulatedImpulse.x) < ROUNDING_KILL_THRESHOLD) accumulatedImpulse.x = 0;
+    if (std::abs(accumulatedImpulse.y) < ROUNDING_KILL_THRESHOLD) accumulatedImpulse.y = 0;
+    
+    const float TORQUE_KILL_THRESHOLD = 1.0f; // <-- BEAUCOUP PLUS PETIT
+
+    if (std::abs(accumulatedTorqueA) < TORQUE_KILL_THRESHOLD) accumulatedTorqueA = 0.0f;
+    if (std::abs(accumulatedTorqueB) < TORQUE_KILL_THRESHOLD) accumulatedTorqueB = 0.0f;
+
+    if (result.contact_count >= 2) {
+        // Même avec 2 points, on garde un seuil bas pour ne pas bloquer les ajustements légitimes
+        if (std::abs(accumulatedTorqueA) < TORQUE_KILL_THRESHOLD * 5.0f) accumulatedTorqueA = 0.0f;
+        if (std::abs(accumulatedTorqueB) < TORQUE_KILL_THRESHOLD * 5.0f) accumulatedTorqueB = 0.0f;
+    }
+
+    // Application Finale sur les VRAIES vitesses
+    pA.vx -= accumulatedImpulse.x * pA.invMass;
+    pA.vy -= accumulatedImpulse.y * pA.invMass;
+    pA.omega += accumulatedTorqueA * pA.invInertia;
+
+    pB.vx += accumulatedImpulse.x * pB.invMass;
+    pB.vy += accumulatedImpulse.y * pB.invMass;
+    pB.omega += accumulatedTorqueB * pB.invInertia;
 }
 
 void PhysicsSystem::resolve_contact(ParticleCache& pA, ParticleCache& pB) {
     Collision::Manifold result = {false, {0,0}, 0, 0, {{0,0}, {0,0}}};
 
-    // --- (Détection collisions inchangée) ---
+    // --- Détection (Inchangé) ---
     if (pA.type == 0 && pB.type == 0) { 
         result = Collision::test_circles({pA.x, pA.y}, pA.r, {pB.x, pB.y}, pB.r);
     }
@@ -182,63 +266,65 @@ void PhysicsSystem::resolve_contact(ParticleCache& pA, ParticleCache& pB) {
     }
 
     if (result.is_colliding) {
-        float invMassA = pA.invMass;
-        float invMassB = pB.invMass;
-        float totalMass = invMassA + invMassB;
-
+        float totalMass = pA.invMass + pB.invMass;
         if (totalMass == 0.0f && pA.invInertia == 0.0f && pB.invInertia == 0.0f) return;
 
-        // Estimation de la vitesse d'impact sur le premier point pour choisir la stratégie
+        // Pré-calcul Vitesse Impact
         Vect2 mainContact = result.contacts[0];
-        Vect2 rA = mainContact - Vect2{pA.x, pA.y};
-        Vect2 rB = mainContact - Vect2{pB.x, pB.y};
+        Vect2 rA_check = mainContact - Vect2{pA.x, pA.y};
+        Vect2 rB_check = mainContact - Vect2{pB.x, pB.y};
+        Vect2 vA = PhysicsMath::get_velocity_at_point({pA.vx, pA.vy}, pA.omega, rA_check);
+        Vect2 vB = PhysicsMath::get_velocity_at_point({pB.vx, pB.vy}, pB.omega, rB_check);
+        float vNormal = PhysicsMath::dot(vB - vA, result.normal_vector);
 
-        Vect2 velA = PhysicsMath::get_velocity_at_point({pA.vx, pA.vy}, pA.omega, rA);
-        Vect2 velB = PhysicsMath::get_velocity_at_point({pB.vx, pB.vy}, pB.omega, rB);
-        Vect2 relVel = velB - velA;
-        float contactVelAlongNormal = PhysicsMath::dot(relVel, result.normal_vector);
+        const float IMPACT_THRESHOLD = 100.0f;
 
-        // --- BRANCHE 1 : HAUTE VITESSE (CCD / REWIND) ---
-        if (contactVelAlongNormal < -EPSILON) {
-            float timeToRewind = result.depth / -contactVelAlongNormal;
+        // --- BRANCHE 1 : REWIND (Haute vitesse OU Vibration forte) ---
+        if (vNormal < -IMPACT_THRESHOLD) {
+            float timeToRewind = result.depth / -vNormal;
             if (timeToRewind > MAX_REWIND_TIME) timeToRewind = MAX_REWIND_TIME; 
 
-            // 1. On rembobine
+            // 1. Rewind
             PhysicsMath::integrate_position(pA.x, pA.y, pA.theta, pA.vx, pA.vy, pA.omega, -timeToRewind);
             PhysicsMath::integrate_position(pB.x, pB.y, pB.theta, pB.vx, pB.vy, pB.omega, -timeToRewind);
 
-            // 2. On applique l'impulsion sur TOUS les points (Correctif Multi-points)
-            for (int i = 0; i < result.contact_count; ++i) {
-                apply_impulse(pA, pB, result.normal_vector, result.contacts[i]);
-            }
+            // 2. Résolution (Appel Fonction)
+            solve_sequential_impulse(pA, pB, result);
 
-            // 3. On avance à nouveau
+            // 3. Forward
             PhysicsMath::integrate_position(pA.x, pA.y, pA.theta, pA.vx, pA.vy, pA.omega, timeToRewind);
             PhysicsMath::integrate_position(pB.x, pB.y, pB.theta, pB.vx, pB.vy, pB.omega, timeToRewind);
         } 
-        // --- BRANCHE 2 : REPOS / EMPILEMENT (SLOP + BAUMGARTE) ---
+        
+        // --- BRANCHE 2 : REPOS (Correction de position + Résolution) ---
         else {
             const float SLOP = 0.5f;
             const float BAUMGARTE = 0.2f;
 
-            for (int i = 0; i < result.contact_count; ++i) {
-                Vect2 cp = result.contacts[i];
+            // 1. Correction de Position (Slop)
+            float penetration = std::max(0.0f, result.depth - SLOP);
+            
+            if (penetration > 0.0f) {
+                float correctionMag = (penetration / totalMass) * BAUMGARTE;
+                correctionMag /= (float)result.contact_count; 
+                
+                Vect2 correction = result.normal_vector * correctionMag;
 
-                // A. Correction de Position (Slop)
-                // On divise par le nombre de contacts pour ne pas pousser 2 fois trop fort
-                float penetration = std::max(0.0f, result.depth - SLOP);
-                if (penetration > 0.0f) {
-                    float correctionMag = (penetration / totalMass) * BAUMGARTE;
-                    correctionMag /= (float)result.contact_count; 
+                // --- AJOUT : KILLER DE MICRO-DRIFT DE POSITION ---
+                // Si on doit corriger la position de moins de 0.01 pixel sur un axe, 
+                // on considère que c'est du bruit numérique et on ne bouge pas cet axe.
+                const float POS_CORRECTION_THRESHOLD = 0.05f; // Ajuste si nécessaire (0.01 à 0.05)
 
-                    Vect2 correction = result.normal_vector * correctionMag;
-                    pA.x -= correction.x * invMassA; pA.y -= correction.y * invMassA;
-                    pB.x += correction.x * invMassB; pB.y += correction.y * invMassB;
-                }
+                if (std::abs(correction.x) < POS_CORRECTION_THRESHOLD) correction.x = 0.0f;
+                if (std::abs(correction.y) < POS_CORRECTION_THRESHOLD) correction.y = 0.0f;
+                // ------------------------------------------------
 
-                // B. Impulsion (Rebond + Friction)
-                apply_impulse(pA, pB, result.normal_vector, cp);
+                pA.x -= correction.x * pA.invMass; pA.y -= correction.y * pA.invMass;
+                pB.x += correction.x * pB.invMass; pB.y += correction.y * pB.invMass;
             }
+
+            // 2. Résolution (Appel Fonction) - Reste inchangé
+            solve_sequential_impulse(pA, pB, result);
         }
     }
 }
