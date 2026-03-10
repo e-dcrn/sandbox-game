@@ -15,6 +15,8 @@ struct ParticleCache {
     float invMass;
     float invInertia;
     float restitution;
+    float staticFriction;
+    float dynamicFriction;
     int type;        // 0=Circle, 1=Box
     float hw, hh;    // Pour les boites
 };

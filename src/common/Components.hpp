@@ -30,6 +30,8 @@ struct RigidBody {
     float restitution;
     float inertia;
     float inverseInertia;
+    float staticFriction;
+    float dynamicFriction;
 };
 
 struct GravityAffected {

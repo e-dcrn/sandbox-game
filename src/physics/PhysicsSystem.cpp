@@ -70,13 +70,15 @@ void PhysicsSystem::sync_from_registry(entt::registry& registry) {
     auto view = registry.view<Position, Collider>();
     
     view.each([this, &registry](auto entity, const auto& pos, const auto& col) {
-        float vx = 0, vy = 0, omega = 0, invMass = 0, restitution = 1.0f, invInertia = 0.0f;
+        float vx = 0, vy = 0, omega = 0, invMass = 0, restitution = 1.0f, invInertia = 0.0f, staticFriction = 0.0f, dynamicFriction = 0.0f;
 
         if (registry.all_of<RigidBody>(entity)) {
             const auto& body = registry.get<RigidBody>(entity);
             invMass = body.inverseMass;
             restitution = body.restitution;
             invInertia = body.inverseInertia;
+            staticFriction = body.staticFriction;
+            dynamicFriction = body.dynamicFriction;
         }
         if (registry.all_of<Velocity>(entity)) {
             const auto& vel = registry.get<Velocity>(entity);
@@ -87,7 +89,7 @@ void PhysicsSystem::sync_from_registry(entt::registry& registry) {
         float hw = col.width * 0.5f;
         float hh = col.height * 0.5f;
 
-        cache.push_back({entity, pos.x, pos.y, pos.theta, vx, vy, omega, col.radius, invMass, invInertia, restitution, type, hw, hh});
+        cache.push_back({entity, pos.x, pos.y, pos.theta, vx, vy, omega, col.radius, invMass, invInertia, restitution, staticFriction, dynamicFriction, type, hw, hh});
     });
 }
 
@@ -174,6 +176,7 @@ void PhysicsSystem::solve_sequential_impulse(ParticleCache& pA, ParticleCache& p
         
         float velAlongNormal = PhysicsMath::dot(relVel, result.normal_vector);
         if (velAlongNormal >= 0) continue;
+        
         float e = PhysicsMath::combine_restitution(pA.restitution, pB.restitution);
         if (std::abs(velAlongNormal) < 20.0f) e = 0.0f; 
 
@@ -187,6 +190,7 @@ void PhysicsSystem::solve_sequential_impulse(ParticleCache& pA, ParticleCache& p
         if (denominateur > 0.0f) {
             float j = numerateur / denominateur;
 
+            // --- APPLICATION DE L'IMPULSION NORMALE ---
             Vect2 impulse = result.normal_vector * j;
             pA.vx -= impulse.x * pA.invMass;
             pA.vy -= impulse.y * pA.invMass;
@@ -195,6 +199,49 @@ void PhysicsSystem::solve_sequential_impulse(ParticleCache& pA, ParticleCache& p
             pB.vx += impulse.x * pB.invMass;
             pB.vy += impulse.y * pB.invMass;
             pB.omega += (rB.x * impulse.y - rB.y * impulse.x) * pB.invInertia;
+
+            // --- CALCUL DE LA FRICTION ---
+            Vect2 velA_f = PhysicsMath::get_velocity_at_point({pA.vx, pA.vy}, pA.omega, rA);
+            Vect2 velB_f = PhysicsMath::get_velocity_at_point({pB.vx, pB.vy}, pB.omega, rB);
+            Vect2 relVel_f = velB_f - velA_f;
+
+            Vect2 tangent = {-result.normal_vector.y, result.normal_vector.x};
+            
+            float velAlongTangent = PhysicsMath::dot(relVel_f, tangent);
+            if (velAlongTangent < 0.0f) {
+                tangent = {-tangent.x, -tangent.y};
+                velAlongTangent = -velAlongTangent; // Devient positif
+            }
+
+            float denomTangent = PhysicsMath::calculate_total_impulse_denominator(
+                pA.invMass, pA.invInertia, rA, 
+                pB.invMass, pB.invInertia, rB, 
+                tangent
+            );
+
+            if (denomTangent > 0.0f) {
+                float jt = -velAlongTangent / denomTangent; 
+
+                float mu_s = std::sqrt(pA.staticFriction * pB.staticFriction);
+                float mu_d = std::sqrt(pA.dynamicFriction * pB.dynamicFriction);
+
+                float frictionImpulse;
+                if (std::abs(jt) <= j * mu_s) {
+                    frictionImpulse = jt;
+                } else {
+                    frictionImpulse = -j * mu_d;
+                }
+
+                Vect2 frictionVec = tangent * frictionImpulse;
+
+                pA.vx -= frictionVec.x * pA.invMass;
+                pA.vy -= frictionVec.y * pA.invMass;
+                pA.omega -= (rA.x * frictionVec.y - rA.y * frictionVec.x) * pA.invInertia;
+
+                pB.vx += frictionVec.x * pB.invMass;
+                pB.vy += frictionVec.y * pB.invMass;
+                pB.omega += (rB.x * frictionVec.y - rB.y * frictionVec.x) * pB.invInertia;
+            }
         }
     }
 }
@@ -345,7 +392,7 @@ Collision::RaycastHit PhysicsSystem::sweep_static_collisions(entt::registry& reg
         if (current_hit.t < 0.0f) return;
         if (current_hit.hit && current_hit.t < best_hit.t) {
             best_hit = current_hit;
-        }Parfait. Maintenant pour fini, depuis que mes box peuvent tourner mon raycast ne marche plus (je pense) bien
+        }
     });
 
     return best_hit;

@@ -67,9 +67,10 @@ public:
         return *this;
     }
 
-    EntityBuilder& withPhysicsMaterial(float restitution, float friction = 0.0f) {
+    EntityBuilder& withPhysicsMaterial(float restitution, float static_friction = 1.0f, float dynamic_friction = 1.0f) {
         m_restitution = restitution;
-        m_friction = friction; // Sera utilisé quand ajouté au RigidBody
+        m_static_friction = static_friction; 
+        m_dynamic_friction = dynamic_friction;
         return *this;
     }
 
@@ -136,8 +137,7 @@ public:
         float invMass = (m_mass > 0.0f) ? 1.0f / m_mass : 0.0f;
         float invInertia = (inertia > 0.0f) ? 1.0f / inertia : 0.0f;
 
-        // Note: On pourrait ajouter m_friction dans RigidBody plus tard
-        m_registry.emplace<RigidBody>(entity, m_mass, invMass, m_restitution, inertia, invInertia);
+        m_registry.emplace<RigidBody>(entity, m_mass, invMass, m_restitution, inertia, invInertia, m_static_friction, m_dynamic_friction);
 
         // 6. Flags
         if (m_hasGravity) {
@@ -166,7 +166,8 @@ private:
     bool m_customInertiaMassSet = false;
 
     float m_restitution = 0.5f;
-    float m_friction = 0.0f;
+    float m_static_friction = 0.0f;
+    float m_dynamic_friction = 0.0f;
     
     bool m_hasGravity = false;
     bool m_hasCollider = false;
