@@ -10,9 +10,9 @@ SUPRIMER DERNIER PUSH
 - [x] Créer des nouvelle fonction mathématique pour simplifier PhysicsSystem ou Collision
 2. [x] Implémenter AABB pour le partitionnement spacial
 3. [x] Checker les points de contact qui peuvent encore poser problème (test)
-- [ ] Faire une choix entre stabilité (kill d'arondi sur les impulsions) et la perte d'énergie (sur les vitesses angulaires)
-4. [ ] Ne pas oublier de mettre à jours l'énergie mécanique dans le mode debug
-5. [ ] Réparer le RayCast
+- [x] Faire une choix entre stabilité (kill d'arondi sur les impulsions) et la perte d'énergie (sur les vitesses angulaires)
+4. [x] Ne pas oublier de mettre à jours l'énergie mécanique dans le mode debug
+5. [x] Réparer le RayCast
 
 ## Frotement solide :
 ### Idée rapide

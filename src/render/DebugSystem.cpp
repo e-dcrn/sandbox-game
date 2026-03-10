@@ -25,16 +25,21 @@ void render_debug_window(const ImGuiIO& io, Game& game) {
     // --- Mechanical Energy Calculation ---
     float total_mechanical_energy = 0.0f;
     const float g = 980.0f;
-    auto view = game.registry.view<const Position, const Velocity, const RigidBody, const Circle>();
+    
+    auto view = game.registry.view<const Position, const Velocity, const RigidBody>();
 
-    view.each([&total_mechanical_energy, &g](auto& pos, auto& vel, auto& body, auto& ){
-        if (body.inverseMass > 0) {
-            float mass = body.mass;
-            float kinetic_energy = 0.5f * mass * (vel.x * vel.x + vel.y * vel.y);
+    view.each([&total_mechanical_energy, &g](auto& pos, auto& vel, auto& body){
+        if (body.inverseMass > 0.0f) {
+            float mass = body.mass; 
+            float inertia = (body.inverseInertia > 0.0f) ? (1.0f / body.inverseInertia) : 0.0f;
+
+            float kinetic_translation = 0.5f * mass * (vel.x * vel.x + vel.y * vel.y);
+            float kinetic_rotation = 0.5f * inertia * (vel.omega * vel.omega);
             float potential_energy = mass * g * (500.0f - pos.y);
-            total_mechanical_energy += kinetic_energy + potential_energy;
+
+            total_mechanical_energy += kinetic_translation + kinetic_rotation + potential_energy;
         }
-    });
+    });    
     total_mechanical_energy /= 1000.0f; // Convert to kJ
     ImGui::Text("Total Mechanical Energy: %.2f", total_mechanical_energy);
     // --- End ---
@@ -42,7 +47,6 @@ void render_debug_window(const ImGuiIO& io, Game& game) {
     ImGui::End();
     ImGui::ShowDemoWindow();
 }
-
 void handle_debug_input(Game& game, const SDL_Event& event) {
     if (event.type == SDL_KEYDOWN) {
         switch (event.key.keysym.sym) {

@@ -158,93 +158,45 @@ Vect2 PhysicsSystem::calculate_impulse_vector(const ParticleCache& pA, const Par
 }
 
 void PhysicsSystem::solve_sequential_impulse(ParticleCache& pA, ParticleCache& pB, const Collision::Manifold& result) {
-    float simVX_A = pA.vx, simVY_A = pA.vy; // On copie Vitesse Linéaire
-    float simVX_B = pB.vx, simVY_B = pB.vy; 
     
-    // IMPORTANT : On copie Omega, mais on ne le modifiera PAS dans la boucle simulation
-    // pour éviter que le point 1 fasse croire au point 2 que la boite tourne déjà.
-    const float constantOmega_A = pA.omega; 
-    const float constantOmega_B = pB.omega;
-
-    Vect2 accumulatedImpulse = {0.0f, 0.0f};
-    float accumulatedTorqueA = 0.0f;
-    float accumulatedTorqueB = 0.0f;
-
     for (int i = 0; i < result.contact_count; ++i) {
         Vect2 cp = result.contacts[i];
+        
         Vect2 rA = cp - Vect2{pA.x, pA.y};
         Vect2 rB = cp - Vect2{pB.x, pB.y};
         
         if (pA.type == 0) rA = result.normal_vector * pA.r;
         if (pB.type == 0) rB = -result.normal_vector * pB.r;
 
-        // On utilise constantOmega ici (la valeur du début de frame)
-        Vect2 velA = PhysicsMath::get_velocity_at_point({simVX_A, simVY_A}, constantOmega_A, rA);
-        Vect2 velB = PhysicsMath::get_velocity_at_point({simVX_B, simVY_B}, constantOmega_B, rB);
+        Vect2 velA = PhysicsMath::get_velocity_at_point({pA.vx, pA.vy}, pA.omega, rA);
+        Vect2 velB = PhysicsMath::get_velocity_at_point({pB.vx, pB.vy}, pB.omega, rB);
         Vect2 relVel = velB - velA;
         
         float velAlongNormal = PhysicsMath::dot(relVel, result.normal_vector);
+        if (velAlongNormal >= 0) continue;
+        float e = PhysicsMath::combine_restitution(pA.restitution, pB.restitution);
+        if (std::abs(velAlongNormal) < 20.0f) e = 0.0f; 
 
-        if (velAlongNormal < 0) { 
-            float e = PhysicsMath::combine_restitution(pA.restitution, pB.restitution);
-            if (std::abs(velAlongNormal) < 20.0f) e = 0.0f; 
+        float numerateur = -(1.0f + e) * velAlongNormal;
+        float denominateur = PhysicsMath::calculate_total_impulse_denominator(
+            pA.invMass, pA.invInertia, rA, 
+            pB.invMass, pB.invInertia, rB, 
+            result.normal_vector
+        );
 
-            float numerateur = -(1.0f + e) * velAlongNormal;
-            float denominateur = PhysicsMath::calculate_total_impulse_denominator(
-                pA.invMass, pA.invInertia, rA, pB.invMass, pB.invInertia, rB, result.normal_vector);
+        if (denominateur > 0.0f) {
+            float j = numerateur / denominateur;
 
-            if (denominateur > 0.0f) {
-                float j = numerateur / denominateur;
-                Vect2 impulse = result.normal_vector * j;
+            Vect2 impulse = result.normal_vector * j;
+            pA.vx -= impulse.x * pA.invMass;
+            pA.vy -= impulse.y * pA.invMass;
+            pA.omega -= (rA.x * impulse.y - rA.y * impulse.x) * pA.invInertia;
 
-                // 1. Accumulation réelle (Pour l'application finale)
-                accumulatedImpulse.x += impulse.x;
-                accumulatedImpulse.y += impulse.y;
-                accumulatedTorqueA += (rA.x * (-impulse.y) - rA.y * (-impulse.x));
-                accumulatedTorqueB += (rB.x * impulse.y - rB.y * impulse.x);
-
-                // 2. Application virtuelle PARTIELLE
-                // On met à jour VX/VY pour éviter l'explosion d'énergie (double rebond)
-                // MAIS ON NE TOUCHE PAS À OMEGA.
-                
-                // Note : Je décompose ton appel apply_impulse_to_body pour ne pas toucher Omega
-                // Simulation A
-                simVX_A -= impulse.x * pA.invMass;
-                simVY_A -= impulse.y * pA.invMass;
-                // simOmega_A n'est pas touché !
-
-                // Simulation B
-                simVX_B += impulse.x * pB.invMass;
-                simVY_B += impulse.y * pB.invMass;
-                // simOmega_B n'est pas touché !
-            }
+            pB.vx += impulse.x * pB.invMass;
+            pB.vy += impulse.y * pB.invMass;
+            pB.omega += (rB.x * impulse.y - rB.y * impulse.x) * pB.invInertia;
         }
     }
-
-    // --- KILL D'ARRONDI SUR LA SOMME TOTALE ---
-    const float ROUNDING_KILL_THRESHOLD = 0.5f; 
-    if (std::abs(accumulatedImpulse.x) < ROUNDING_KILL_THRESHOLD) accumulatedImpulse.x = 0;
-    if (std::abs(accumulatedImpulse.y) < ROUNDING_KILL_THRESHOLD) accumulatedImpulse.y = 0;
-    
-    const float TORQUE_KILL_THRESHOLD = 1.0f; // <-- BEAUCOUP PLUS PETIT
-
-    if (std::abs(accumulatedTorqueA) < TORQUE_KILL_THRESHOLD) accumulatedTorqueA = 0.0f;
-    if (std::abs(accumulatedTorqueB) < TORQUE_KILL_THRESHOLD) accumulatedTorqueB = 0.0f;
-
-    if (result.contact_count >= 2) {
-        // Même avec 2 points, on garde un seuil bas pour ne pas bloquer les ajustements légitimes
-        if (std::abs(accumulatedTorqueA) < TORQUE_KILL_THRESHOLD * 5.0f) accumulatedTorqueA = 0.0f;
-        if (std::abs(accumulatedTorqueB) < TORQUE_KILL_THRESHOLD * 5.0f) accumulatedTorqueB = 0.0f;
-    }
-
-    // Application Finale sur les VRAIES vitesses
-    pA.vx -= accumulatedImpulse.x * pA.invMass;
-    pA.vy -= accumulatedImpulse.y * pA.invMass;
-    pA.omega += accumulatedTorqueA * pA.invInertia;
-
-    pB.vx += accumulatedImpulse.x * pB.invMass;
-    pB.vy += accumulatedImpulse.y * pB.invMass;
-    pB.omega += accumulatedTorqueB * pB.invInertia;
 }
 
 void PhysicsSystem::resolve_contact(ParticleCache& pA, ParticleCache& pB) {
@@ -367,8 +319,6 @@ Collision::RaycastHit PhysicsSystem::sweep_static_collisions(entt::registry& reg
     Collision::RaycastHit best_hit;
     best_hit.t = 1.0f;
 
-    // Récupération de la taille du joueur (on suppose que c'est le rayon d'un cercle pour simplifier)
-    // Si ton joueur est une boîte, prends la moitié de la largeur
     float body_radius = body_collider.radius; 
     if(body_collider.type == ColliderType::BOX) body_radius = std::min(body_collider.width, body_collider.height) / 2.0f;
 
@@ -379,15 +329,13 @@ Collision::RaycastHit PhysicsSystem::sweep_static_collisions(entt::registry& reg
         Collision::RaycastHit current_hit;
 
         if (wall_col.type == ColliderType::BOX) {
-            // Cas 1 : Mur Carré (On gonfle la boîte avec le rayon du joueur)
             float expanded_w = wall_col.width + body_radius * 2.0f;
             float expanded_h = wall_col.height + body_radius * 2.0f;
             
-            current_hit = Collision::raycast_box(pos.x, pos.y, dx, dy, 
-                                      wall_pos.x, wall_pos.y, expanded_w, expanded_h);
+            current_hit = Collision::raycast_box_rotated(pos.x, pos.y, dx, dy, 
+                                      wall_pos.x, wall_pos.y, expanded_w, expanded_h, wall_pos.theta);
         } 
         else if (wall_col.type == ColliderType::CIRCLE) {
-            // Cas 2 : Mur Rond (On gonfle le cercle avec le rayon du joueur)
             float expanded_radius = wall_col.radius + body_radius;
             
             current_hit = Collision::raycast_circle(pos.x, pos.y, dx, dy, 
@@ -397,7 +345,7 @@ Collision::RaycastHit PhysicsSystem::sweep_static_collisions(entt::registry& reg
         if (current_hit.t < 0.0f) return;
         if (current_hit.hit && current_hit.t < best_hit.t) {
             best_hit = current_hit;
-        }
+        }Parfait. Maintenant pour fini, depuis que mes box peuvent tourner mon raycast ne marche plus (je pense) bien
     });
 
     return best_hit;
@@ -415,17 +363,10 @@ void PhysicsSystem::apply_continuous_movement(Position& pos, Velocity& vel, cons
     pos.x += dx * safe_t;
     pos.y += dy * safe_t;
     
-    float dot = PhysicsMath::dot({vel.x, vel.y}, hit.normal);
-
-    float restitution_factor = 1.0f + body.restitution * 0.5f;
-    float j = -restitution_factor * dot; 
+    float velAlongNormal = PhysicsMath::dot({vel.x, vel.y}, hit.normal);
     
-    vel.x += j * hit.normal.x;
-    vel.y += j * hit.normal.y;
-
-    float rem = 1.0f - hit.t;
-    if (rem > 0) { 
-        pos.x += vel.x * dt * rem; 
-        pos.y += vel.y * dt * rem; 
+    if (velAlongNormal < 0) {
+        vel.x -= velAlongNormal * hit.normal.x;
+        vel.y -= velAlongNormal * hit.normal.y;
     }
 }

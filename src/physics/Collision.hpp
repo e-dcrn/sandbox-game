@@ -305,28 +305,38 @@ namespace Collision {
     }
     
     // RaycastHit functions remain unchanged (they are single point by definition)
-    inline RaycastHit raycast_box(float ox, float oy, float dx, float dy, 
-                              float bx, float by, float bw, float bh) {
+    inline RaycastHit raycast_box_rotated(float ox, float oy, float dx, float dy, 
+                                          float bx, float by, float bw, float bh, float angle) {
         RaycastHit result;
-        float inv_dx = (dx != 0.0f) ? 1.0f / dx : std::numeric_limits<float>::max();
-        float inv_dy = (dy != 0.0f) ? 1.0f / dy : std::numeric_limits<float>::max();
+        Vect2 rel_origin = {ox - bx, oy - by};
+        Vect2 local_o = PhysicsMath::rotate(rel_origin, -angle);
+        Vect2 local_d = PhysicsMath::rotate({dx, dy}, -angle);
+
+        float inv_dx = (local_d.x != 0.0f) ? 1.0f / local_d.x : std::numeric_limits<float>::max();
+        float inv_dy = (local_d.y != 0.0f) ? 1.0f / local_d.y : std::numeric_limits<float>::max();
+        
         Vect2 half_dim = Vect2{bw, bh} * 0.5f;
-        Vect2 b_min = Vect2{bx, by} - half_dim;
-        Vect2 b_max = Vect2{bx, by} + half_dim;
-        float t1 = (b_min.x - ox) * inv_dx;
-        float t2 = (b_max.x - ox) * inv_dx;
-        float t3 = (b_min.y - oy) * inv_dy;
-        float t4 = (b_max.y - oy) * inv_dy;
+        Vect2 b_min = -half_dim;
+        Vect2 b_max = half_dim;
+
+        float t1 = (b_min.x - local_o.x) * inv_dx;
+        float t2 = (b_max.x - local_o.x) * inv_dx;
+        float t3 = (b_min.y - local_o.y) * inv_dy;
+        float t4 = (b_max.y - local_o.y) * inv_dy;
+
         float tmin = std::max(std::min(t1, t2), std::min(t3, t4));
         float tmax = std::min(std::max(t1, t2), std::max(t3, t4));
         if (tmax < 0 || tmin > tmax || tmin > 1.0f) return result;
+
         result.hit = true;
         result.t = tmin; 
+        Vect2 local_normal;
         if (std::min(t1, t2) > std::min(t3, t4)) {
-            result.normal = {(dx < 0) ? 1.0f : -1.0f, 0.0f};
+            local_normal = {(local_d.x < 0) ? 1.0f : -1.0f, 0.0f};
         } else {
-            result.normal = {0.0f, (dy < 0) ? 1.0f : -1.0f};
+            local_normal = {0.0f, (local_d.y < 0) ? 1.0f : -1.0f};
         }
+        result.normal = PhysicsMath::rotate(local_normal, angle);
         return result;
     }
     
