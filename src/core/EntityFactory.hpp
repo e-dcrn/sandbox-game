@@ -25,7 +25,7 @@ namespace Factory {
             .at(x, y)
             .withColor(100, 100, 100)
             .withMass(0.0f)          // Statique -> Inertie 0 par défaut
-            .withPhysicsMaterial(1.0f, 0.2f, 0.1f) // Rebond et friction
+            .withPhysicsMaterial(1.0f, 0.3f, 0.3f) // Rebond et friction
             .withCollider()
             // Pas de gravité
             .build();

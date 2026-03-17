@@ -3,6 +3,7 @@
 #include "ForceRegistry.hpp"
 #include "../common/Components.hpp"
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include "Collision.hpp"
 #include "PhysicsMath.hpp"

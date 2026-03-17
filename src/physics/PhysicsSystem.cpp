@@ -222,8 +222,8 @@ void PhysicsSystem::solve_sequential_impulse(ParticleCache& pA, ParticleCache& p
             if (denomTangent > 0.0f) {
                 float jt = -velAlongTangent / denomTangent; 
 
-                float mu_s = std::sqrt(pA.staticFriction * pB.staticFriction);
-                float mu_d = std::sqrt(pA.dynamicFriction * pB.dynamicFriction);
+                float mu_s = std::min(pA.staticFriction, pB.staticFriction);
+                float mu_d = std::min(pA.dynamicFriction, pB.dynamicFriction);
 
                 float frictionImpulse;
                 if (std::abs(jt) <= j * mu_s) {
@@ -297,8 +297,8 @@ void PhysicsSystem::resolve_contact(ParticleCache& pA, ParticleCache& pB) {
         
         // --- BRANCHE 2 : REPOS (Correction de position + Résolution) ---
         else {
-            const float SLOP = 0.5f;
-            const float BAUMGARTE = 0.2f;
+            const float SLOP = 0.01f; 
+            const float BAUMGARTE = 0.2f / 7.0f;
 
             // 1. Correction de Position (Slop)
             float penetration = std::max(0.0f, result.depth - SLOP);
@@ -312,7 +312,7 @@ void PhysicsSystem::resolve_contact(ParticleCache& pA, ParticleCache& pB) {
                 // --- AJOUT : KILLER DE MICRO-DRIFT DE POSITION ---
                 // Si on doit corriger la position de moins de 0.01 pixel sur un axe, 
                 // on considère que c'est du bruit numérique et on ne bouge pas cet axe.
-                const float POS_CORRECTION_THRESHOLD = 0.05f; // Ajuste si nécessaire (0.01 à 0.05)
+                const float POS_CORRECTION_THRESHOLD = 0.01f; // Ajuste si nécessaire (0.01 à 0.05)
 
                 if (std::abs(correction.x) < POS_CORRECTION_THRESHOLD) correction.x = 0.0f;
                 if (std::abs(correction.y) < POS_CORRECTION_THRESHOLD) correction.y = 0.0f;
@@ -330,28 +330,41 @@ void PhysicsSystem::resolve_contact(ParticleCache& pA, ParticleCache& pB) {
 
 void PhysicsSystem::solve_collisions() {
     refresh_grid_from_cache();
-    // On itère sur le CACHE linéaire (Ultra rapide)
+
+    // To avoid processing the same pair multiple times (can happen if they share multiple cells)
+    std::unordered_set<uint64_t> processed_pairs;
+    processed_pairs.reserve(cache.size() * 2);
+
+    // Iterating over all objects that can initiate a collision (dynamic or kinematic)
     for(int i = 0; i < (int)cache.size(); ++i) {
         ParticleCache& pA = cache[i];
-        if (pA.invMass == 0 && pA.invInertia == 0) continue; // Les murs ne cherchent pas
+        
+        // Static objects (invMass=0 AND invInertia=0) don't initiate checks
+        if (pA.invMass == 0 && pA.invInertia == 0) continue;
 
-        int cx, cy;
-        PhysicsMath::world_to_grid(pA.x, pA.y, CELL_SIZE, cx, cy);
+        // Calculate AABB in grid coordinates to check ALL relevant cells
+        Vect2 aabbA = PhysicsMath::compute_aabb_half_dims(pA.type, pA.r, pA.hw, pA.hh, pA.theta);
+        auto bounds = PhysicsMath::compute_grid_bounds(pA.x, pA.y, aabbA.x, aabbA.y, CELL_SIZE);
 
-        // Voisins 3x3
-        for(int dy = -1; dy <= 1; ++dy) {
-            for(int dx = -1; dx <= 1; ++dx) {
-                int hash = get_spatial_hash(cx + dx, cy + dy);
+        for (int gy = bounds.startY; gy <= bounds.endY; ++gy) {
+            for (int gx = bounds.startX; gx <= bounds.endX; ++gx) {
+                int hash = get_spatial_hash(gx, gy);
                 const auto& cell = hash_grid[hash];
 
-                for(int other_i : cell.particle_indices) {
-                    if (i == other_i) continue;
-                    ParticleCache& pB = cache[other_i];
+                for(int j : cell.particle_indices) {
+                    if (i == j) continue; // Same object
 
-                    // Optimisation "Processed Pairs" via ID (Seulement entre dynamiques)
-                    if ((pB.invMass > 0 || pB.invInertia > 0) && pA.entity >= pB.entity) continue;
+                    // Create a unique key for the pair (lowest index first)
+                    int id1 = i, id2 = j;
+                    if (id1 > id2) std::swap(id1, id2);
+                    uint64_t pair_key = (static_cast<uint64_t>(id1) << 32) | static_cast<uint32_t>(id2);
 
-                    // Résolution
+                    // If already processed this pair in this pass, skip
+                    if (processed_pairs.find(pair_key) != processed_pairs.end()) continue;
+                    processed_pairs.insert(pair_key);
+
+                    ParticleCache& pB = cache[j];
+                    
                     resolve_contact(pA, pB);
                 }
             }
