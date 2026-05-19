@@ -37,11 +37,9 @@ void Test_Maths_Circle_Circle() {
         Vect2 c1 = {0, 0};
         Vect2 c2 = {20, 0}; 
         // Rayons 10. Distance 20. Overlap = 0.
-        // Selon ton implémentation ( < vs <= ), cela peut être true ou false.
-        // Généralement en physique on considère ça comme "pas de collision" ou "collision résolue".
+        // Check for overlap behavior
         Collision::Manifold res = Collision::test_circles(c1, 10.0f, c2, 10.0f);
         
-        // Si ta fonction utilise 'distSq < reqSq', c'est false.
         ExpectTrue(!res.is_colliding, "[Math] Touching (No Penetration)");
     }
 
@@ -99,7 +97,7 @@ void Test_Maths_Circle_Circle() {
         ExpectTrue(res.is_colliding, "[Math] Same Position");
         ExpectTrue(IsClose(res.depth, 20.0f), "[Math] Same Position Depth"); // Rayon A + Rayon B
         
-        // Vérifie que la normale n'est pas NaN (Ta fonction doit renvoyer une valeur par défaut, ex: 0,1)
+        // Vérifie que la normale n'est pas NaN
         bool normalIsValid = !std::isnan(res.normal_vector.x) && !std::isnan(res.normal_vector.y);
         ExpectTrue(normalIsValid, "[Math] Same Position Normal is Valid (No NaN)");
         
@@ -298,15 +296,11 @@ void Test_Maths_Circle_Box() {
 
     // -------------------------------------------------------------------------
     // 5. Tangent (Touching)
-    // Cercle à x=15. Bord à x=10. Rayon 5.
-    // Distance = 5. Overlap = 0.
-    // Selon ton implémentation, dist == radius renvoie souvent true avec depth 0.
     // -------------------------------------------------------------------------
     {
         Vect2 circ_pos = {15, 0};
         Collision::Manifold res = Collision::test_circle_box(circ_pos, radius, box_pos, box_size);
         
-        // Ta fonction Collision::test_circle_box renvoie TRUE si dist <= radius
         ExpectTrue(res.is_colliding, "[Math] Touching Edge");
         ExpectTrue(IsClose(res.depth, 0.0f), "[Math] Touching Depth is 0");
     }
@@ -890,15 +884,23 @@ void Test_System_Circle_vs_Box() {
         physics.update(registry, 0.016f);
 
         // PhysicsSystem applique une impulsion ou modifie la position pour résoudre.
-        // Si c'est une résolution par impulsion, la vitesse doit devenir positive (vers la droite).
         const auto& posBall = registry.get<Position>(ball);
         
-        // Note : Selon ton implémentation (déplacement direct vs vélocité),
-        // soit la position a changé, soit la vélocité a changé.
-        // Ici on teste la réponse physique standard (rebond/éjection).
-        
-        // Si ton moteur gère le "depenetration" via la vélocité :
         ExpectTrue(posBall.x > 8.0f, "[3] Inside: Position ejected towards nearest edge (Right)");
+    }
+}
+
+int main() {
+    std::cout << "=== FULL PHYSICS TESTS ===" << std::endl;
+    
+    Test_Collision_Maths();
+    Test_System_Circle_vs_Circle();
+    Test_System_Box_vs_Box();
+    Test_System_Circle_vs_Box();
+
+    std::cout << "=== ALL DONE ===" << std::endl;
+    return 0;
+}on ejected towards nearest edge (Right)");
     }
 }
 

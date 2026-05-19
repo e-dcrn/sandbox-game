@@ -4,11 +4,11 @@ graph TD
         KBD[Clavier / Souris] --> OS[Système d'Exploitation Linux/X11]
     end
 
-    subgraph APP [TON APPLICATION C++]
+    subgraph APP [APPLICATION C++]
         OS --> SDL_CORE[SDL2 Core<br>Gestion Fenêtre & Événements]
 
         subgraph LOGIC [Boucle de Jeu - Le Cerveau]
-            SDL_CORE -- "1. Événements" --> GAME_LOOP[Ta Boucle while running]
+            SDL_CORE -- "1. Événements" --> GAME_LOOP[Boucle de Jeu]
             GAME_LOOP -- "Lit/Écrit" --> ENTT[(EnTT Registry)]
             GAME_LOOP -- "2. Logique" --> IMGUI_CORE[ImGui Core]
         end

@@ -36,7 +36,7 @@ Ne pas utiliser `while(true) { update(); draw(); }` bêtement. Il faut un **Time
     * `render()` (Dessin)
 
 ### 2.2 Gestionnaire de Ressources (Resource Manager)
-Pour ne pas charger la texture "herbe.png" 500 fois si tu as 500 tuiles d'herbe.
+Pour ne pas charger la texture "herbe.png" plusieurs fois pour chaque tuile.
 
 * [ ] Créer une classe singleton ou statique `ResourceManager`.
 * [ ] Stocker les textures dans une `std::map<std::string, Texture>`.
@@ -104,7 +104,8 @@ Pour une sandbox, l'Orienté Objet classique (`class Arbre`, `class Joueur`, `cl
 
 Tu ne veux pas recompiler ton code chaque fois que tu veux tester une vitesse de déplacement ou changer une texture de sol.
 
-* [ ] Intégrer **Dear ImGui** par-dessus ta fenêtre SFML/SDL.
+* [x] Intégrer **Dear ImGui** par-dessus ta fenêtre SFML/SDL.
+* [x] Créer une fenêtre de debug.
 * [ ] Créer une fenêtre de debug "Map Editor" :
     * Afficher les coordonnées de la souris (Grille vs Écran).
     * Sélecteur de tuile (Palette).
@@ -146,4 +147,5 @@ Une structure propre dès le début t'évitera de tout refaire dans 2 semaines.
 |
 |-- /libs               (Dépendances : SFML, EnTT, ImGui, JSON)
 |-- CMakeLists.txt      (Configuration de build)
+```figuration de build)
 ```
