@@ -8,7 +8,6 @@ class EntityBuilder {
 public:
     explicit EntityBuilder(entt::registry& registry) : m_registry(registry) {}
 
-    // --- 1. Type et Forme ---
 
     EntityBuilder& asCircle(float radius) {
         m_type = ShapeType::CIRCLE;
@@ -23,7 +22,6 @@ public:
         return *this;
     }
 
-    // --- 2. Position et Vitesse ---
 
     EntityBuilder& at(float x, float y) {
         m_x = x;
@@ -43,24 +41,19 @@ public:
     }
 
     EntityBuilder& withAngularVelocity(float degreesPerSecond) {
-        m_omega = degreesPerSecond * (3.14159f / 180.0f); // Conversion deg -> rad
+        m_omega = degreesPerSecond * (3.14159f / 180.0f);
         return *this;
     }
 
-    // --- 3. Physique (Masse, Inertie, Matériau) ---
 
     EntityBuilder& withMass(float mass) {
         m_mass = mass;
-        // Par défaut, si on n'a pas encore touché à l'inertie manuelle, 
-        // la masse d'inertie suit la masse principale.
         if (!m_customInertiaMassSet) {
             m_inertiaMass = mass;
         }
         return *this;
     }
 
-    // Permet de définir une masse différente juste pour le calcul de l'inertie
-    // (Ex: Objet fixe mass=0, mais qui peut tourner massInertia=50)
     EntityBuilder& withInertiaMass(float mass) {
         m_inertiaMass = mass;
         m_customInertiaMassSet = true;
@@ -74,7 +67,6 @@ public:
         return *this;
     }
 
-    // --- 4. Comportements et Flags ---
 
     EntityBuilder& withGravity() {
         m_hasGravity = true;
@@ -96,19 +88,15 @@ public:
         return *this;
     }
 
-    // --- 5. Construction Finale ---
 
     entt::entity build() {
         auto entity = m_registry.create();
 
-        // 1. Position & Vélocité
         m_registry.emplace<Position>(entity, m_x, m_y, m_theta);
         m_registry.emplace<Velocity>(entity, m_vx, m_vy, m_omega);
         
-        // 3. Force Accumulator (Indispensable)
         m_registry.emplace<ForceAccumulator>(entity, 0.0f, 0.0f/*, 0.0f*/);
 
-        // 4. Forme et Rendu
         if (m_type == ShapeType::CIRCLE) {
             m_registry.emplace<Circle>(entity, m_radius, m_color);
             if (m_hasCollider) {
@@ -122,10 +110,8 @@ public:
             }
         }
 
-        // 5. RigidBody (Calculs automatiques)
         float inertia = 0.0f;
         
-        // Calcul de l'inertie basé sur la géométrie et la "Masse d'Inertie"
         if (m_inertiaMass > 0.0f) {
             if (m_type == ShapeType::CIRCLE) {
                 inertia = 0.5f * m_inertiaMass * m_radius * m_radius;
@@ -139,7 +125,6 @@ public:
 
         m_registry.emplace<RigidBody>(entity, m_mass, invMass, m_restitution, inertia, invInertia, m_static_friction, m_dynamic_friction);
 
-        // 6. Flags
         if (m_hasGravity) {
             m_registry.emplace<GravityAffected>(entity);
         }
@@ -153,7 +138,6 @@ public:
 private:
     entt::registry& m_registry;
 
-    // Default values
     enum class ShapeType { NONE, CIRCLE, BOX } m_type = ShapeType::NONE;
     float m_x = 0, m_y = 0;
     float m_vx = 0, m_vy = 0, m_theta = 0;
@@ -161,8 +145,8 @@ private:
     float m_width = 10.0f, m_height = 10.0f;
     float m_omega = 0.0f;
     
-    float m_mass = 0.0f;          // Par défaut statique
-    float m_inertiaMass = 0.0f;   // Par défaut statique en rotation aussi
+    float m_mass = 0.0f;          
+    float m_inertiaMass = 0.0f;   
     bool m_customInertiaMassSet = false;
 
     float m_restitution = 0.5f;

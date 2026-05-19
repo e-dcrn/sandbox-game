@@ -3,7 +3,6 @@
 #include <entt/entt.hpp>
 #include <SDL_events.h>
 
-// Forward declaration
 struct ImGuiIO;
 class Game;
 

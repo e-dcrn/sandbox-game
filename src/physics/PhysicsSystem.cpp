@@ -65,8 +65,7 @@ int PhysicsSystem::get_spatial_hash(int cx, int cy) const {
 }
 
 void PhysicsSystem::sync_from_registry(entt::registry& registry) {
-    cache.clear(); // On vide le cache, mais pas la grille (fait ailleurs)
-    
+    cache.clear();
     auto view = registry.view<Position, Collider>();
     
     view.each([this, &registry](auto entity, const auto& pos, const auto& col) {
@@ -112,7 +111,6 @@ void PhysicsSystem::refresh_grid_from_cache() {
 }
 
 void PhysicsSystem::apply_changes_to_registry(entt::registry& registry) {
-    // Copie Cache -> Registry (Seulement pour les dynamiques)
     for(const auto& p : cache) {
         if (p.invMass > 0 || p.invInertia > 0) {
             auto& pos = registry.get<Position>(p.entity);
@@ -124,14 +122,12 @@ void PhysicsSystem::apply_changes_to_registry(entt::registry& registry) {
     }
 }
 
-// Retourne le vecteur d'impulsion (J * normale) sans l'appliquer
 Vect2 PhysicsSystem::calculate_impulse_vector(const ParticleCache& pA, const ParticleCache& pB, 
         const Vect2& normal, const Vect2& contact_point){
     
     Vect2 rA = contact_point - Vect2{pA.x, pA.y};
     Vect2 rB = contact_point - Vect2{pB.x, pB.y};
 
-    // Ton fix pour les cercles
     if (pA.type == 0) rA = normal * pA.r;
     if (pB.type == 0) rB = -normal * pB.r;
 
@@ -141,7 +137,6 @@ Vect2 PhysicsSystem::calculate_impulse_vector(const ParticleCache& pA, const Par
 
     float velAlongNormal = PhysicsMath::dot(relVel, normal);
     
-    // Si les objets s'éloignent, aucune impulsion requise
     if (velAlongNormal > 0) return {0.0f, 0.0f};
 
     float e = PhysicsMath::combine_restitution(pA.restitution, pB.restitution);
@@ -155,7 +150,6 @@ Vect2 PhysicsSystem::calculate_impulse_vector(const ParticleCache& pA, const Par
 
     float j = numerateur / denominateur;
     
-    // On retourne le vecteur impulsion complet
     return normal * j;
 }
 
@@ -190,7 +184,6 @@ void PhysicsSystem::solve_sequential_impulse(ParticleCache& pA, ParticleCache& p
         if (denominateur > 0.0f) {
             float j = numerateur / denominateur;
 
-            // --- APPLICATION DE L'IMPULSION NORMALE ---
             Vect2 impulse = result.normal_vector * j;
             pA.vx -= impulse.x * pA.invMass;
             pA.vy -= impulse.y * pA.invMass;
@@ -200,7 +193,6 @@ void PhysicsSystem::solve_sequential_impulse(ParticleCache& pA, ParticleCache& p
             pB.vy += impulse.y * pB.invMass;
             pB.omega += (rB.x * impulse.y - rB.y * impulse.x) * pB.invInertia;
 
-            // --- CALCUL DE LA FRICTION ---
             Vect2 velA_f = PhysicsMath::get_velocity_at_point({pA.vx, pA.vy}, pA.omega, rA);
             Vect2 velB_f = PhysicsMath::get_velocity_at_point({pB.vx, pB.vy}, pB.omega, rB);
             Vect2 relVel_f = velB_f - velA_f;
@@ -210,7 +202,7 @@ void PhysicsSystem::solve_sequential_impulse(ParticleCache& pA, ParticleCache& p
             float velAlongTangent = PhysicsMath::dot(relVel_f, tangent);
             if (velAlongTangent < 0.0f) {
                 tangent = {-tangent.x, -tangent.y};
-                velAlongTangent = -velAlongTangent; // Devient positif
+                velAlongTangent = -velAlongTangent; 
             }
 
             float denomTangent = PhysicsMath::calculate_total_impulse_denominator(
@@ -249,7 +241,6 @@ void PhysicsSystem::solve_sequential_impulse(ParticleCache& pA, ParticleCache& p
 void PhysicsSystem::resolve_contact(ParticleCache& pA, ParticleCache& pB) {
     Collision::Manifold result = {false, {0,0}, 0, 0, {{0,0}, {0,0}}};
 
-    // --- Détection (Inchangé) ---
     if (pA.type == 0 && pB.type == 0) { 
         result = Collision::test_circles({pA.x, pA.y}, pA.r, {pB.x, pB.y}, pB.r);
     }
@@ -268,7 +259,6 @@ void PhysicsSystem::resolve_contact(ParticleCache& pA, ParticleCache& pB) {
         float totalMass = pA.invMass + pB.invMass;
         if (totalMass == 0.0f && pA.invInertia == 0.0f && pB.invInertia == 0.0f) return;
 
-        // Pré-calcul Vitesse Impact
         Vect2 mainContact = result.contacts[0];
         Vect2 rA_check = mainContact - Vect2{pA.x, pA.y};
         Vect2 rB_check = mainContact - Vect2{pB.x, pB.y};
@@ -278,29 +268,23 @@ void PhysicsSystem::resolve_contact(ParticleCache& pA, ParticleCache& pB) {
 
         const float IMPACT_THRESHOLD = 100.0f;
 
-        // --- BRANCHE 1 : REWIND (Haute vitesse OU Vibration forte) ---
         if (vNormal < -IMPACT_THRESHOLD) {
             float timeToRewind = result.depth / -vNormal;
             if (timeToRewind > MAX_REWIND_TIME) timeToRewind = MAX_REWIND_TIME; 
 
-            // 1. Rewind
             PhysicsMath::integrate_position(pA.x, pA.y, pA.theta, pA.vx, pA.vy, pA.omega, -timeToRewind);
             PhysicsMath::integrate_position(pB.x, pB.y, pB.theta, pB.vx, pB.vy, pB.omega, -timeToRewind);
 
-            // 2. Résolution (Appel Fonction)
             solve_sequential_impulse(pA, pB, result);
 
-            // 3. Forward
             PhysicsMath::integrate_position(pA.x, pA.y, pA.theta, pA.vx, pA.vy, pA.omega, timeToRewind);
             PhysicsMath::integrate_position(pB.x, pB.y, pB.theta, pB.vx, pB.vy, pB.omega, timeToRewind);
         } 
         
-        // --- BRANCHE 2 : REPOS (Correction de position + Résolution) ---
         else {
             const float SLOP = 0.01f; 
             const float BAUMGARTE = 0.2f / 7.0f;
 
-            // 1. Correction de Position (Slop)
             float penetration = std::max(0.0f, result.depth - SLOP);
             
             if (penetration > 0.0f) {
@@ -309,20 +293,15 @@ void PhysicsSystem::resolve_contact(ParticleCache& pA, ParticleCache& pB) {
                 
                 Vect2 correction = result.normal_vector * correctionMag;
 
-                // --- AJOUT : KILLER DE MICRO-DRIFT DE POSITION ---
-                // Si on doit corriger la position de moins de 0.01 pixel sur un axe, 
-                // on considère que c'est du bruit numérique et on ne bouge pas cet axe.
-                const float POS_CORRECTION_THRESHOLD = 0.01f; // Ajuste si nécessaire (0.01 à 0.05)
+                const float POS_CORRECTION_THRESHOLD = 0.01f;
 
                 if (std::abs(correction.x) < POS_CORRECTION_THRESHOLD) correction.x = 0.0f;
                 if (std::abs(correction.y) < POS_CORRECTION_THRESHOLD) correction.y = 0.0f;
-                // ------------------------------------------------
 
                 pA.x -= correction.x * pA.invMass; pA.y -= correction.y * pA.invMass;
                 pB.x += correction.x * pB.invMass; pB.y += correction.y * pB.invMass;
             }
 
-            // 2. Résolution (Appel Fonction) - Reste inchangé
             solve_sequential_impulse(pA, pB, result);
         }
     }
@@ -331,18 +310,14 @@ void PhysicsSystem::resolve_contact(ParticleCache& pA, ParticleCache& pB) {
 void PhysicsSystem::solve_collisions() {
     refresh_grid_from_cache();
 
-    // To avoid processing the same pair multiple times (can happen if they share multiple cells)
     std::unordered_set<uint64_t> processed_pairs;
     processed_pairs.reserve(cache.size() * 2);
 
-    // Iterating over all objects that can initiate a collision (dynamic or kinematic)
     for(int i = 0; i < (int)cache.size(); ++i) {
         ParticleCache& pA = cache[i];
         
-        // Static objects (invMass=0 AND invInertia=0) don't initiate checks
         if (pA.invMass == 0 && pA.invInertia == 0) continue;
 
-        // Calculate AABB in grid coordinates to check ALL relevant cells
         Vect2 aabbA = PhysicsMath::compute_aabb_half_dims(pA.type, pA.r, pA.hw, pA.hh, pA.theta);
         auto bounds = PhysicsMath::compute_grid_bounds(pA.x, pA.y, aabbA.x, aabbA.y, CELL_SIZE);
 
@@ -352,14 +327,12 @@ void PhysicsSystem::solve_collisions() {
                 const auto& cell = hash_grid[hash];
 
                 for(int j : cell.particle_indices) {
-                    if (i == j) continue; // Same object
+                    if (i == j) continue;
 
-                    // Create a unique key for the pair (lowest index first)
                     int id1 = i, id2 = j;
                     if (id1 > id2) std::swap(id1, id2);
                     uint64_t pair_key = (static_cast<uint64_t>(id1) << 32) | static_cast<uint32_t>(id2);
 
-                    // If already processed this pair in this pass, skip
                     if (processed_pairs.find(pair_key) != processed_pairs.end()) continue;
                     processed_pairs.insert(pair_key);
 

@@ -1,5 +1,5 @@
 #include "core/Game.hpp"
-#include "utils/Logger.hpp" // For log_error in case of init failure
+#include "utils/Logger.hpp"
 
 int main(int, char**) {
     Game game;

@@ -2,7 +2,6 @@
 
 #include <iostream>
 
-// A simple binary output archive for stringstream that entt can use.
 class OArchive {
 public:
     OArchive(std::ostream& stream) : stream(stream) {}
@@ -16,7 +15,6 @@ private:
     std::ostream& stream;
 };
 
-// A simple binary input archive for stringstream that entt can use.
 class IArchive {
 public:
     IArchive(std::istream& stream) : stream(stream) {}

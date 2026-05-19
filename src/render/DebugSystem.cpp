@@ -22,7 +22,6 @@ void render_debug_window(const ImGuiIO& io, Game& game) {
         ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "RUNNING");
     }
 
-    // --- Mechanical Energy Calculation ---
     float total_mechanical_energy = 0.0f;
     const float g = 980.0f;
     
@@ -40,9 +39,8 @@ void render_debug_window(const ImGuiIO& io, Game& game) {
             total_mechanical_energy += kinetic_translation + kinetic_rotation + potential_energy;
         }
     });    
-    total_mechanical_energy /= 1000.0f; // Convert to kJ
+    total_mechanical_energy /= 1000.0f;
     ImGui::Text("Total Mechanical Energy: %.2f", total_mechanical_energy);
-    // --- End ---
 
     ImGui::End();
     ImGui::ShowDemoWindow();

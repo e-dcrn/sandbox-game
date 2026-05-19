@@ -12,18 +12,18 @@ struct ParticleCache {
     entt::entity entity;
     float x, y, theta;      // Position
     float vx, vy, omega;    // Velocity
-    float r;         // Rayon (ou demi-taille)
+    float r;
     float invMass;
     float invInertia;
     float restitution;
     float staticFriction;
     float dynamicFriction;
     int type;        // 0=Circle, 1=Box
-    float hw, hh;    // Pour les boites
+    float hw, hh;
 };
 
 struct GridCell {
-    std::vector<int> particle_indices; // Stocke l'index dans le vecteur 'cache'
+    std::vector<int> particle_indices;
 };
 
 class PhysicsSystem {
@@ -32,12 +32,11 @@ public:
     void update(entt::registry& registry, float dt);
 
 private:
-    const float CELL_SIZE = 30.0f; // Cellule plus large pour moins de checks
+    const float CELL_SIZE = 30.0f;
     
-    // TABLE DE HACHAGE FIXE (Supporte monde infini par enroulement)
     static const int HASH_SIZE = 4093; 
     std::vector<GridCell> hash_grid;
-    std::vector<ParticleCache> cache; // Toutes les données contiguës ici
+    std::vector<ParticleCache> cache;
 
     int get_spatial_hash(int cx, int cy) const;
     void sync_from_registry(entt::registry& registry); 

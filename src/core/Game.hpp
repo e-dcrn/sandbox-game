@@ -7,7 +7,6 @@
 #include <string>
 #include <sstream>
 
-// Forward declaration
 struct ImGuiIO;
 
 class Game {
