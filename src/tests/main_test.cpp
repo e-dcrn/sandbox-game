@@ -2,7 +2,6 @@
 #include <entt/entt.hpp>
 #include <SDL.h>
 
-// Tes fichiers
 #include "TestUtils.hpp"
 #include "../physics/PhysicsSystem.hpp" 
 #include "../core/EntityBuilder.hpp" 
@@ -510,7 +509,6 @@ void Test_Maths_RotatedBox_Box() {
     }
 }
 
-// Fonction principale qui appelle les 3 sous-tests
 void Test_Collision_Maths() {
     std::cout << "--- Testing Collision Maths (All Types) ---" << std::endl;
     Test_Maths_Circle_Circle();

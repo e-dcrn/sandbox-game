@@ -2,19 +2,18 @@
 
 #include <cmath>
 #include <algorithm>
-#include <array> // Nécessaire pour std::array
+#include <array>
 #include "../common/Components.hpp"
 #include "PhysicsMath.hpp"
 
 namespace Collision {
 
-    // Structure mise à jour pour supporter jusqu'à 2 points de contact
     struct Manifold {
         bool is_colliding;
         Vect2 normal_vector;
         float depth;
-        int contact_count;      // Nombre de points (0, 1 ou 2)
-        Vect2 contacts[2];      // Tableau des points de contact
+        int contact_count;
+        Vect2 contacts[2];
     };
     
     struct RaycastHit {
@@ -38,7 +37,6 @@ namespace Collision {
             if (dist == 0.0f) {
                 normal = {0.0f, 1.0f};
                 contact = centerA + Vect2{0.0f, radiusA};
-                // Retourne 1 point de contact
                 return { true, normal, required_distance, 1, {contact, {0,0}} }; 
             }
             normal = PhysicsMath::normalize(delta);
@@ -48,8 +46,8 @@ namespace Collision {
                 true,
                 normal,
                 required_distance - dist,
-                1,              // Count
-                {contact, {0,0}} // Contacts array
+                1,
+                {contact, {0,0}}
             };
         }
         return {false, {0.0f, 0.0f}, 0.0f, 0, {{0,0}, {0,0}}};
@@ -110,7 +108,6 @@ namespace Collision {
                                                     Vect2 boxPos, Vect2 boxDim, float boxAngle) {
         Vect2 relPos = circlePos - boxPos;
         
-        // Passage en local
         Vect2 localCirclePos = PhysicsMath::rotate(relPos, -boxAngle);
     
         Manifold localResult = test_circle_box(localCirclePos, radius, {0.0f, 0.0f}, boxDim);
@@ -122,7 +119,6 @@ namespace Collision {
             worldResult.depth = localResult.depth;
             worldResult.contact_count = localResult.contact_count;
 
-            // On rotate tous les points de contact trouvés (généralement 1 pour un cercle)
             for(int i=0; i < localResult.contact_count; ++i) {
                 worldResult.contacts[i] = PhysicsMath::rotate(localResult.contacts[i], boxAngle) + boxPos;
             }
@@ -212,7 +208,6 @@ namespace Collision {
         Vect2 smallestAxis = {0, 0};
         int bestAxisIndex = -1; 
 
-        // 1. SAT Loop (Séparation Axis Theorem)
         for (int i = 0; i < 4; i++) {
             float minA, maxA, minB, maxB;
             project_on_axis(vertsA, axes[i], minA, maxA);
@@ -237,7 +232,6 @@ namespace Collision {
             smallestAxis = -smallestAxis;
         }
 
-        // --- DETECTION ALIGNEMENT (TOLERANCE) ---
         const float PI_2 = 1.57079632679f;
         const float ANGLE_EPSILON = 0.05f; 
 
@@ -246,30 +240,23 @@ namespace Collision {
 
         bool isAligned = (diffAngle < ANGLE_EPSILON || diffAngle > (PI_2 - ANGLE_EPSILON));
         
-        // Si aligné, on cherche jusqu'à 2 points avec une tolérance large (1.5px)
-        // Sinon, on cherche le point unique le plus profond (0.01px)
         float flatTolerance = isAligned ? 1.5f : 0.01f;
 
-        // --- CALCUL DES POINTS DE CONTACT (MULTI-POINTS) ---
         Manifold result;
         result.is_colliding = true;
         result.normal_vector = smallestAxis;
         result.depth = minOverlap;
-        result.contact_count = 0; // On commence à 0
-
+        result.contact_count = 0; 
         const std::array<Vect2, 4>* vertsToTest;
 
         if (bestAxisIndex < 2) {
-            // Normale A->B, l'incident est B. On cherche le Min Dot sur B.
             vertsToTest = &vertsB;
             float minProj = std::numeric_limits<float>::max();
             
-            // 1. Trouver la profondeur maximale (valeur min)
             for(const auto& v : *vertsToTest) {
                 float proj = PhysicsMath::dot(v, smallestAxis);
                 if(proj < minProj) minProj = proj;
             }
-            // 2. Récupérer TOUS les points proches de cette profondeur (Max 2)
             for(const auto& v : *vertsToTest) {
                 float proj = PhysicsMath::dot(v, smallestAxis);
                 if (std::abs(proj - minProj) <= flatTolerance) {
@@ -280,16 +267,13 @@ namespace Collision {
                 }
             }
         } else {
-            // Normale A->B, l'incident est A. On cherche le Max Dot sur A.
             vertsToTest = &vertsA;
             float maxProj = std::numeric_limits<float>::lowest();
 
-            // 1. Trouver la profondeur maximale (valeur max)
             for(const auto& v : *vertsToTest) {
                 float proj = PhysicsMath::dot(v, smallestAxis);
                 if(proj > maxProj) maxProj = proj;
             }
-            // 2. Récupérer TOUS les points proches de cette profondeur (Max 2)
             for(const auto& v : *vertsToTest) {
                 float proj = PhysicsMath::dot(v, smallestAxis);
                 if (std::abs(proj - maxProj) <= flatTolerance) {
@@ -304,7 +288,6 @@ namespace Collision {
         return result;
     }
     
-    // RaycastHit functions remain unchanged (they are single point by definition)
     inline RaycastHit raycast_box_rotated(float ox, float oy, float dx, float dy, 
                                           float bx, float by, float bw, float bh, float angle) {
         RaycastHit result;
