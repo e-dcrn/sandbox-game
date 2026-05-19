@@ -900,18 +900,4 @@ int main() {
 
     std::cout << "=== ALL DONE ===" << std::endl;
     return 0;
-}on ejected towards nearest edge (Right)");
-    }
-}
-
-int main() {
-    std::cout << "=== FULL PHYSICS TESTS ===" << std::endl;
-    
-    Test_Collision_Maths();
-    Test_System_Circle_vs_Circle();
-    Test_System_Box_vs_Box();
-    Test_System_Circle_vs_Box();
-
-    std::cout << "=== ALL DONE ===" << std::endl;
-    return 0;
 }
