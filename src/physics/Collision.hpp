@@ -232,57 +232,66 @@ namespace Collision {
             smallestAxis = -smallestAxis;
         }
 
-        const float PI_2 = 1.57079632679f;
-        const float ANGLE_EPSILON = 0.05f; 
-
-        float diffAngle = std::abs(angleA - angleB);
-        diffAngle = diffAngle - std::floor(diffAngle / PI_2) * PI_2;
-
-        bool isAligned = (diffAngle < ANGLE_EPSILON || diffAngle > (PI_2 - ANGLE_EPSILON));
-        
-        float flatTolerance = isAligned ? 1.5f : 0.01f;
-
         Manifold result;
         result.is_colliding = true;
         result.normal_vector = smallestAxis;
         result.depth = minOverlap;
-        result.contact_count = 0; 
-        const std::array<Vect2, 4>* vertsToTest;
+        result.contact_count = 0;
 
-        if (bestAxisIndex < 2) {
-            vertsToTest = &vertsB;
-            float minProj = std::numeric_limits<float>::max();
-            
-            for(const auto& v : *vertsToTest) {
-                float proj = PhysicsMath::dot(v, smallestAxis);
-                if(proj < minProj) minProj = proj;
-            }
-            for(const auto& v : *vertsToTest) {
-                float proj = PhysicsMath::dot(v, smallestAxis);
-                if (std::abs(proj - minProj) <= flatTolerance) {
-                    if (result.contact_count < 2) {
-                        result.contacts[result.contact_count] = v;
-                        result.contact_count++;
-                    }
-                }
-            }
-        } else {
-            vertsToTest = &vertsA;
-            float maxProj = std::numeric_limits<float>::lowest();
+        const bool refIsA = (bestAxisIndex < 2);
+        const std::array<Vect2, 4>& refVerts = refIsA ? vertsA : vertsB;
+        const std::array<Vect2, 4>& incVerts = refIsA ? vertsB : vertsA;
+        Vect2 refNormal = refIsA ? smallestAxis : -smallestAxis;
 
-            for(const auto& v : *vertsToTest) {
-                float proj = PhysicsMath::dot(v, smallestAxis);
-                if(proj > maxProj) maxProj = proj;
+        auto edge_normal = [](const std::array<Vect2, 4>& v, int i) {
+            Vect2 e = v[(i + 1) % 4] - v[i];
+            return PhysicsMath::normalize(Vect2{e.y, -e.x});
+        };
+
+        int refEdge = 0, incEdge = 0;
+        float bestRef = std::numeric_limits<float>::lowest();
+        float bestInc = std::numeric_limits<float>::max();
+        for (int i = 0; i < 4; ++i) {
+            float dr = PhysicsMath::dot(edge_normal(refVerts, i), refNormal);
+            if (dr > bestRef) { bestRef = dr; refEdge = i; }
+            float di = PhysicsMath::dot(edge_normal(incVerts, i), refNormal);
+            if (di < bestInc) { bestInc = di; incEdge = i; }
+        }
+
+        Vect2 r1 = refVerts[refEdge];
+        Vect2 r2 = refVerts[(refEdge + 1) % 4];
+        Vect2 tangent = PhysicsMath::normalize(r2 - r1);
+
+        Vect2 clip[2] = { incVerts[incEdge], incVerts[(incEdge + 1) % 4] };
+
+        auto clip_segment = [](Vect2 (&pts)[2], Vect2 n, float offset) {
+            float d0 = PhysicsMath::dot(pts[0], n) - offset;
+            float d1 = PhysicsMath::dot(pts[1], n) - offset;
+            if (d0 > 0.0f && d1 > 0.0f) return false;
+            if (d0 * d1 < 0.0f) {
+                Vect2 inter = pts[0] + (pts[1] - pts[0]) * (d0 / (d0 - d1));
+                if (d0 > 0.0f) pts[0] = inter; else pts[1] = inter;
             }
-            for(const auto& v : *vertsToTest) {
-                float proj = PhysicsMath::dot(v, smallestAxis);
-                if (std::abs(proj - maxProj) <= flatTolerance) {
-                    if (result.contact_count < 2) {
-                        result.contacts[result.contact_count] = v;
-                        result.contact_count++;
-                    }
-                }
+            return true;
+        };
+
+        if (!clip_segment(clip, -tangent, -PhysicsMath::dot(r1, tangent)) ||
+            !clip_segment(clip,  tangent,  PhysicsMath::dot(r2, tangent))) {
+            result.contacts[0] = clip[0];
+            result.contact_count = 1;
+            return result;
+        }
+
+        float refOffset = PhysicsMath::dot(r1, refNormal);
+        for (const Vect2& p : clip) {
+            float separation = PhysicsMath::dot(p, refNormal) - refOffset;
+            if (separation <= 0.0f && result.contact_count < 2) {
+                result.contacts[result.contact_count++] = p;
             }
+        }
+        if (result.contact_count == 0) {
+            result.contacts[0] = clip[0];
+            result.contact_count = 1;
         }
 
         return result;

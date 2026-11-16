@@ -12,6 +12,7 @@ struct ParticleCache {
     entt::entity entity;
     float x, y, theta;      // Position
     float vx, vy, omega;    // Velocity
+    float vx0, vy0, omega0;
     float r;
     float invMass;
     float invInertia;
@@ -37,6 +38,7 @@ private:
     static const int HASH_SIZE = 4093; 
     std::vector<GridCell> hash_grid;
     std::vector<ParticleCache> cache;
+    std::unordered_set<uint64_t> processed_pairs;
 
     int get_spatial_hash(int cx, int cy) const;
     void sync_from_registry(entt::registry& registry); 
@@ -44,8 +46,6 @@ private:
     void apply_changes_to_registry(entt::registry& registry);
 
     ForceRegistry force_registry;
-    static Vect2 calculate_impulse_vector(const ParticleCache& pA, const ParticleCache& pB, 
-        const Vect2& normal, const Vect2& contact_point);
     static void solve_sequential_impulse(ParticleCache& pA, ParticleCache& pB, const Collision::Manifold& result);
     static void resolve_contact(ParticleCache& pA, ParticleCache& pB);
     void solve_collisions();

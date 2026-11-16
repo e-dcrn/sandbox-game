@@ -2,9 +2,7 @@
 #include "forces/Gravity.hpp"
 
 constexpr int PHYSICS_SUB_STEPS = 1;
-constexpr float REWIND_THRESHOLD_SQ = 0.00001f;
 constexpr float MAX_REWIND_TIME = 0.05f;
-constexpr float EPSILON = 0.00001f;
 
 void PhysicsSystem::init() {
     force_registry.add([](entt::registry& r, float /*dt*/) { 
@@ -14,6 +12,7 @@ void PhysicsSystem::init() {
     hash_grid.resize(HASH_SIZE);
     for(auto& cell : hash_grid) cell.particle_indices.reserve(16);
     cache.reserve(3000);
+    processed_pairs.reserve(6000);
 }
 
 void PhysicsSystem::update(entt::registry& registry, float dt) {
@@ -57,11 +56,10 @@ void PhysicsSystem::update(entt::registry& registry, float dt) {
 }
 
 int PhysicsSystem::get_spatial_hash(int cx, int cy) const {
-    const int p1 = 73856093;
-    const int p2 = 19349663;
-    int n = ((cx * p1) ^ (cy * p2)) % HASH_SIZE;
-    if (n < 0) n += HASH_SIZE;
-    return n;
+    const uint32_t p1 = 73856093u;
+    const uint32_t p2 = 19349663u;
+    uint32_t h = (static_cast<uint32_t>(cx) * p1) ^ (static_cast<uint32_t>(cy) * p2);
+    return static_cast<int>(h % HASH_SIZE);
 }
 
 void PhysicsSystem::sync_from_registry(entt::registry& registry) {
@@ -88,7 +86,7 @@ void PhysicsSystem::sync_from_registry(entt::registry& registry) {
         float hw = col.width * 0.5f;
         float hh = col.height * 0.5f;
 
-        cache.push_back({entity, pos.x, pos.y, pos.theta, vx, vy, omega, col.radius, invMass, invInertia, restitution, staticFriction, dynamicFriction, type, hw, hh});
+        cache.push_back({entity, pos.x, pos.y, pos.theta, vx, vy, omega, vx, vy, omega, col.radius, invMass, invInertia, restitution, staticFriction, dynamicFriction, type, hw, hh});
     });
 }
 
@@ -122,79 +120,86 @@ void PhysicsSystem::apply_changes_to_registry(entt::registry& registry) {
     }
 }
 
-Vect2 PhysicsSystem::calculate_impulse_vector(const ParticleCache& pA, const ParticleCache& pB, 
-        const Vect2& normal, const Vect2& contact_point){
-    
-    Vect2 rA = contact_point - Vect2{pA.x, pA.y};
-    Vect2 rB = contact_point - Vect2{pB.x, pB.y};
-
-    if (pA.type == 0) rA = normal * pA.r;
-    if (pB.type == 0) rB = -normal * pB.r;
-
-    Vect2 velA = PhysicsMath::get_velocity_at_point({pA.vx, pA.vy}, pA.omega, rA);
-    Vect2 velB = PhysicsMath::get_velocity_at_point({pB.vx, pB.vy}, pB.omega, rB);
-    Vect2 relVel = velB - velA;
-
-    float velAlongNormal = PhysicsMath::dot(relVel, normal);
-    
-    if (velAlongNormal > 0) return {0.0f, 0.0f};
-
-    float e = PhysicsMath::combine_restitution(pA.restitution, pB.restitution);
-
-    float numerateur = -(1.0f + e) * velAlongNormal;
-    float denominateur = PhysicsMath::calculate_total_impulse_denominator(
-        pA.invMass, pA.invInertia, rA, 
-        pB.invMass, pB.invInertia, rB, normal);
-
-    if (denominateur == 0.0f) return {0.0f, 0.0f};
-
-    float j = numerateur / denominateur;
-    
-    return normal * j;
-}
-
 void PhysicsSystem::solve_sequential_impulse(ParticleCache& pA, ParticleCache& pB, const Collision::Manifold& result) {
-    
-    for (int i = 0; i < result.contact_count; ++i) {
+    const Vect2 n = result.normal_vector;
+    const int count = std::min(result.contact_count, 2);
+
+    Vect2 rA[2], rB[2];
+    float vn[2] = {0.0f, 0.0f};
+    float target[2] = {0.0f, 0.0f};
+    float k[2] = {0.0f, 0.0f};
+    float j[2] = {0.0f, 0.0f};
+
+    float e_base = PhysicsMath::combine_restitution(pA.restitution, pB.restitution);
+
+    for (int i = 0; i < count; ++i) {
         Vect2 cp = result.contacts[i];
-        
-        Vect2 rA = cp - Vect2{pA.x, pA.y};
-        Vect2 rB = cp - Vect2{pB.x, pB.y};
-        
-        if (pA.type == 0) rA = result.normal_vector * pA.r;
-        if (pB.type == 0) rB = -result.normal_vector * pB.r;
+        rA[i] = cp - Vect2{pA.x, pA.y};
+        rB[i] = cp - Vect2{pB.x, pB.y};
+        if (pA.type == 0) rA[i] = n * pA.r;
+        if (pB.type == 0) rB[i] = -n * pB.r;
 
-        Vect2 velA = PhysicsMath::get_velocity_at_point({pA.vx, pA.vy}, pA.omega, rA);
-        Vect2 velB = PhysicsMath::get_velocity_at_point({pB.vx, pB.vy}, pB.omega, rB);
-        Vect2 relVel = velB - velA;
-        
-        float velAlongNormal = PhysicsMath::dot(relVel, result.normal_vector);
-        if (velAlongNormal >= 0) continue;
-        
-        float e = PhysicsMath::combine_restitution(pA.restitution, pB.restitution);
-        if (std::abs(velAlongNormal) < 20.0f) e = 0.0f; 
+        Vect2 velA = PhysicsMath::get_velocity_at_point({pA.vx, pA.vy}, pA.omega, rA[i]);
+        Vect2 velB = PhysicsMath::get_velocity_at_point({pB.vx, pB.vy}, pB.omega, rB[i]);
+        vn[i] = PhysicsMath::dot(velB - velA, n);
 
-        float numerateur = -(1.0f + e) * velAlongNormal;
-        float denominateur = PhysicsMath::calculate_total_impulse_denominator(
-            pA.invMass, pA.invInertia, rA, 
-            pB.invMass, pB.invInertia, rB, 
-            result.normal_vector
-        );
+        Vect2 velA0 = PhysicsMath::get_velocity_at_point({pA.vx0, pA.vy0}, pA.omega0, rA[i]);
+        Vect2 velB0 = PhysicsMath::get_velocity_at_point({pB.vx0, pB.vy0}, pB.omega0, rB[i]);
+        float vn0 = PhysicsMath::dot(velB0 - velA0, n);
 
-        if (denominateur > 0.0f) {
-            float j = numerateur / denominateur;
+        float e = (std::abs(vn0) < 20.0f) ? 0.0f : e_base;
+        target[i] = (vn0 < 0.0f) ? -e * vn0 : 0.0f;
 
-            Vect2 impulse = result.normal_vector * j;
-            pA.vx -= impulse.x * pA.invMass;
-            pA.vy -= impulse.y * pA.invMass;
-            pA.omega -= (rA.x * impulse.y - rA.y * impulse.x) * pA.invInertia;
+        k[i] = PhysicsMath::calculate_total_impulse_denominator(
+            pA.invMass, pA.invInertia, rA[i],
+            pB.invMass, pB.invInertia, rB[i], n);
+    }
 
-            pB.vx += impulse.x * pB.invMass;
-            pB.vy += impulse.y * pB.invMass;
-            pB.omega += (rB.x * impulse.y - rB.y * impulse.x) * pB.invInertia;
+    if (count == 1) {
+        if (vn[0] < target[0] && k[0] > 0.0f) j[0] = (target[0] - vn[0]) / k[0];
+    } else if (count == 2) {
+        float rnA0 = PhysicsMath::cross(rA[0], n), rnA1 = PhysicsMath::cross(rA[1], n);
+        float rnB0 = PhysicsMath::cross(rB[0], n), rnB1 = PhysicsMath::cross(rB[1], n);
+        float k12 = pA.invMass + pB.invMass + pA.invInertia * rnA0 * rnA1 + pB.invInertia * rnB0 * rnB1;
+        float b0 = target[0] - vn[0];
+        float b1 = target[1] - vn[1];
+        float det = k[0] * k[1] - k12 * k12;
+        bool solved = false;
 
-            Vect2 velA_f = PhysicsMath::get_velocity_at_point({pA.vx, pA.vy}, pA.omega, rA);
-            Vect2 velB_f = PhysicsMath::get_velocity_at_point({pB.vx, pB.vy}, pB.omega, rB);
+        if (det > 1e-4f * k[0] * k[1]) {
+            float x0 = (k[1] * b0 - k12 * b1) / det;
+            float x1 = (k[0] * b1 - k12 * b0) / det;
+            if (x0 >= 0.0f && x1 >= 0.0f) { j[0] = x0; j[1] = x1; solved = true; }
+        }
+        if (!solved && k[0] > 0.0f) {
+            float x0 = b0 / k[0];
+            if (x0 >= 0.0f && vn[1] + k12 * x0 >= target[1]) { j[0] = x0; solved = true; }
+        }
+        if (!solved && k[1] > 0.0f) {
+            float x1 = b1 / k[1];
+            if (x1 >= 0.0f && vn[0] + k12 * x1 >= target[0]) { j[1] = x1; solved = true; }
+        }
+    }
+
+    for (int i = 0; i < count; ++i) {
+        if (j[i] <= 0.0f) continue;
+        Vect2 impulse = n * j[i];
+        pA.vx -= impulse.x * pA.invMass;
+        pA.vy -= impulse.y * pA.invMass;
+        pA.omega -= PhysicsMath::cross(rA[i], impulse) * pA.invInertia;
+
+        pB.vx += impulse.x * pB.invMass;
+        pB.vy += impulse.y * pB.invMass;
+        pB.omega += PhysicsMath::cross(rB[i], impulse) * pB.invInertia;
+    }
+
+    for (int c = 0; c < count; ++c) {
+        if (j[c] <= 0.0f) continue;
+        const Vect2& rA_c = rA[c];
+        const Vect2& rB_c = rB[c];
+        {
+            Vect2 velA_f = PhysicsMath::get_velocity_at_point({pA.vx, pA.vy}, pA.omega, rA_c);
+            Vect2 velB_f = PhysicsMath::get_velocity_at_point({pB.vx, pB.vy}, pB.omega, rB_c);
             Vect2 relVel_f = velB_f - velA_f;
 
             Vect2 tangent = {-result.normal_vector.y, result.normal_vector.x};
@@ -206,8 +211,8 @@ void PhysicsSystem::solve_sequential_impulse(ParticleCache& pA, ParticleCache& p
             }
 
             float denomTangent = PhysicsMath::calculate_total_impulse_denominator(
-                pA.invMass, pA.invInertia, rA, 
-                pB.invMass, pB.invInertia, rB, 
+                pA.invMass, pA.invInertia, rA_c, 
+                pB.invMass, pB.invInertia, rB_c, 
                 tangent
             );
 
@@ -218,21 +223,21 @@ void PhysicsSystem::solve_sequential_impulse(ParticleCache& pA, ParticleCache& p
                 float mu_d = std::min(pA.dynamicFriction, pB.dynamicFriction);
 
                 float frictionImpulse;
-                if (std::abs(jt) <= j * mu_s) {
+                if (std::abs(jt) <= j[c] * mu_s) {
                     frictionImpulse = jt;
                 } else {
-                    frictionImpulse = -j * mu_d;
+                    frictionImpulse = -j[c] * mu_d;
                 }
 
                 Vect2 frictionVec = tangent * frictionImpulse;
 
                 pA.vx -= frictionVec.x * pA.invMass;
                 pA.vy -= frictionVec.y * pA.invMass;
-                pA.omega -= (rA.x * frictionVec.y - rA.y * frictionVec.x) * pA.invInertia;
+                pA.omega -= (rA_c.x * frictionVec.y - rA_c.y * frictionVec.x) * pA.invInertia;
 
                 pB.vx += frictionVec.x * pB.invMass;
                 pB.vy += frictionVec.y * pB.invMass;
-                pB.omega += (rB.x * frictionVec.y - rB.y * frictionVec.x) * pB.invInertia;
+                pB.omega += (rB_c.x * frictionVec.y - rB_c.y * frictionVec.x) * pB.invInertia;
             }
         }
     }
@@ -283,13 +288,12 @@ void PhysicsSystem::resolve_contact(ParticleCache& pA, ParticleCache& pB) {
         
         else {
             const float SLOP = 0.01f; 
-            const float BAUMGARTE = 0.2f / 7.0f;
+            const float BAUMGARTE = 0.2f / 3.0f;
 
             float penetration = std::max(0.0f, result.depth - SLOP);
             
             if (penetration > 0.0f) {
                 float correctionMag = (penetration / totalMass) * BAUMGARTE;
-                correctionMag /= (float)result.contact_count; 
                 
                 Vect2 correction = result.normal_vector * correctionMag;
 
@@ -310,8 +314,7 @@ void PhysicsSystem::resolve_contact(ParticleCache& pA, ParticleCache& pB) {
 void PhysicsSystem::solve_collisions() {
     refresh_grid_from_cache();
 
-    std::unordered_set<uint64_t> processed_pairs;
-    processed_pairs.reserve(cache.size() * 2);
+    processed_pairs.clear();
 
     for(int i = 0; i < (int)cache.size(); ++i) {
         ParticleCache& pA = cache[i];
@@ -355,10 +358,14 @@ Collision::RaycastHit PhysicsSystem::sweep_static_collisions(entt::registry& reg
     float body_radius = body_collider.radius; 
     if(body_collider.type == ColliderType::BOX) body_radius = std::min(body_collider.width, body_collider.height) / 2.0f;
 
-    auto statics = registry.view<Position, Collider>(entt::exclude<Velocity>);
+    auto statics = registry.view<Position, Collider, RigidBody>();
 
-    statics.each([&](const auto& wall_pos, const auto& wall_col) {
-        
+    statics.each([&](auto wall, const auto& wall_pos, const auto& wall_col, const auto& wall_body) {
+        if (wall_body.inverseMass != 0.0f || wall_body.inverseInertia != 0.0f) return;
+        if (const auto* wall_vel = registry.try_get<Velocity>(wall)) {
+            if (wall_vel->x != 0.0f || wall_vel->y != 0.0f || wall_vel->omega != 0.0f) return;
+        }
+
         Collision::RaycastHit current_hit;
 
         if (wall_col.type == ColliderType::BOX) {

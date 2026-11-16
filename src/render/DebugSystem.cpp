@@ -43,7 +43,6 @@ void render_debug_window(const ImGuiIO& io, Game& game) {
     ImGui::Text("Total Mechanical Energy: %.2f", total_mechanical_energy);
 
     ImGui::End();
-    ImGui::ShowDemoWindow();
 }
 void handle_debug_input(Game& game, const SDL_Event& event) {
     if (event.type == SDL_KEYDOWN) {
@@ -78,6 +77,7 @@ void handle_debug_input(Game& game, const SDL_Event& event) {
                         .get<Velocity>(iarchive)
                         .get<GravityAffected>(iarchive)
                         .get<Collider>(iarchive)
+                        .get<UseRaycast>(iarchive)
                         .orphans();
 
                     game.m_history.pop_back();
@@ -103,7 +103,8 @@ void take_snapshot(Game& game) {
         .get<ForceAccumulator>(oarchive)
         .get<Velocity>(oarchive)
         .get<GravityAffected>(oarchive)
-        .get<Collider>(oarchive);
+        .get<Collider>(oarchive)
+        .get<UseRaycast>(oarchive);
     game.m_history.push_back(storage.str());
     if (game.m_history.size() > Game::MAX_HISTORY_SIZE) {
         game.m_history.pop_front();

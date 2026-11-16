@@ -530,7 +530,7 @@ void Test_System_Circle_vs_Circle() {
         EntityBuilder builder(registry);
 
         auto e1 = builder.asCircle(10).at(-10, 0)
-            .withVelocity(10, 0).withMass(1.0f).withPhysicsMaterial(1.0f) // Restitution 1.0
+            .withVelocity(50, 0).withMass(1.0f).withPhysicsMaterial(1.0f) // Restitution 1.0
             .withCollider().build();
 
         auto e2 = builder.asCircle(10).at(10, 0)
@@ -599,7 +599,7 @@ void Test_System_Circle_vs_Circle() {
 
         // GOLIATH (10kg, V=10)
         auto heavy = builder.asCircle(10).at(-10, 0)
-            .withVelocity(10, 0).withMass(10.0f).withPhysicsMaterial(1.0f)
+            .withVelocity(50, 0).withMass(10.0f).withPhysicsMaterial(1.0f)
             .withCollider().build();
 
         // DAVID (1kg, V=0)
@@ -705,7 +705,7 @@ void Test_System_Box_vs_Box() {
 
         // LA BOITE (Dynamique)
         auto box = builder.asBox(20, 20).at(0, 0)
-            .withVelocity(10, 0).withMass(1.0f).withPhysicsMaterial(1.0f)
+            .withVelocity(50, 0).withMass(1.0f).withPhysicsMaterial(1.0f)
             .withCollider().build();
 
         // Force Overlap (La boite rentre dans le mur)
@@ -832,7 +832,7 @@ void Test_System_Circle_vs_Box() {
         // Comme le rayon est 5, ça touche PILLE (ou overlap epsilon).
         // On la rapproche un tout petit peu pour forcer le rebond : (12.5, 13.5).
         auto ball = builder.asCircle(5.0f).at(15.0f, 15.0f) // Départ loin
-            .withVelocity(-10.0f, -10.0f) // Arrive en diagonale vers le coin
+            .withVelocity(-50.0f, -50.0f) // Arrive en diagonale vers le coin
             .withMass(1.0f).withPhysicsMaterial(1.0f)
             .withCollider().build();
 

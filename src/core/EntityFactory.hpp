@@ -50,7 +50,6 @@ namespace Factory {
             .withColor(0, 255, 255)
             .withAngularVelocity(speed_deg_per_sec)
             .withMass(0.0f)
-            .withInertiaMass(1.0f)  
             .withPhysicsMaterial(1.0f)
             .withCollider()
             .build();

@@ -123,13 +123,22 @@ void Game::process_events() {
 
 void Game::update() {
     Uint64 current_tick = SDL_GetTicks64();
-    float dt = (current_tick - last_tick) / 1000.0f;
+    float frame_dt = (current_tick - last_tick) / 1000.0f;
     last_tick = current_tick;
 
-    // Slow down time step for stability of physics simulation
-    if (dt > 0.01f) dt = 0.01f;
-    
-    physics_system.update(registry, dt);
+    if (m_paused) {
+        accumulator = 0.0f;
+        physics_system.update(registry, FIXED_DT);
+        return;
+    }
+
+    if (frame_dt > MAX_FRAME_DT) frame_dt = MAX_FRAME_DT;
+    accumulator += frame_dt;
+
+    while (accumulator >= FIXED_DT) {
+        physics_system.update(registry, FIXED_DT);
+        accumulator -= FIXED_DT;
+    }
 }
 
 void Game::render() {

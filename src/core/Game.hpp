@@ -37,4 +37,7 @@ private:
     bool is_running;
     int mouse_x, mouse_y;
     Uint64 last_tick = 0;
+    float accumulator = 0.0f;
+    static constexpr float FIXED_DT = 0.01f;
+    static constexpr float MAX_FRAME_DT = 0.05f;
 };
